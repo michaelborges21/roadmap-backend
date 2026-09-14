@@ -4,27 +4,28 @@
     "capitulos": 27,
     "paginas_conteudo": 454,
     "tipo_livro": "teorico",
-    "densidade": "media",
+    "densidade": "densa",
     "nivel_natural": "intermediario",
     "linguagens": [],
     "niveis": {
-      "intermediario": 26,
+      "iniciante": 2,
+      "intermediario": 24,
       "avancado": 1
     },
     "senioridades": {
       "Junior": {
         "capitulos": 27,
-        "total_horas": 41.06,
-        "semanas": 7
+        "total_horas": 55.74,
+        "semanas": 10
       },
       "Pleno": {
-        "capitulos": 27,
-        "total_horas": 24.29,
-        "semanas": 5
+        "capitulos": 25,
+        "total_horas": 31.89,
+        "semanas": 6
       },
       "Senior": {
         "capitulos": 1,
-        "total_horas": 1.51,
+        "total_horas": 1.81,
         "semanas": 1
       }
     }
@@ -33,32 +34,32 @@
     "titulo": "Mãos à obra: aprendizado de máquina com Scikit-Learn, Keras & TensorFlow",
     "capitulos": 19,
     "paginas_conteudo": 592,
-    "tipo_livro": "teorico",
-    "densidade": "media",
+    "tipo_livro": "hibrido",
+    "densidade": "densa",
     "nivel_natural": "intermediario",
     "linguagens": [
       "Python"
     ],
     "niveis": {
-      "iniciante": 3,
-      "intermediario": 7,
+      "iniciante": 4,
+      "intermediario": 6,
       "avancado": 9
     },
     "senioridades": {
       "Junior": {
         "capitulos": 19,
-        "total_horas": 68.09,
-        "semanas": 12
+        "total_horas": 105.53,
+        "semanas": 18
       },
       "Pleno": {
-        "capitulos": 16,
-        "total_horas": 35.07,
-        "semanas": 6
+        "capitulos": 15,
+        "total_horas": 53.47,
+        "semanas": 9
       },
       "Senior": {
         "capitulos": 9,
-        "total_horas": 17.67,
-        "semanas": 3
+        "total_horas": 26.86,
+        "semanas": 5
       }
     }
   },
@@ -66,31 +67,31 @@
     "titulo": "Engenharia de Software para Cientistas de Dados",
     "capitulos": 15,
     "paginas_conteudo": 259,
-    "tipo_livro": "teorico",
+    "tipo_livro": "hibrido",
     "densidade": "media",
     "nivel_natural": "intermediario",
     "linguagens": [
       "Python"
     ],
     "niveis": {
-      "intermediario": 11,
-      "avancado": 4
+      "iniciante": 7,
+      "intermediario": 8
     },
     "senioridades": {
       "Junior": {
         "capitulos": 15,
-        "total_horas": 25.48,
-        "semanas": 5
+        "total_horas": 32.89,
+        "semanas": 6
       },
       "Pleno": {
-        "capitulos": 15,
-        "total_horas": 15.08,
+        "capitulos": 8,
+        "total_horas": 12.48,
         "semanas": 3
       },
       "Senior": {
-        "capitulos": 4,
-        "total_horas": 3.81,
-        "semanas": 1
+        "capitulos": 0,
+        "total_horas": 0.0,
+        "semanas": 0
       }
     }
   },
@@ -98,8 +99,8 @@
     "titulo": "Pense em estatística",
     "capitulos": 14,
     "paginas_conteudo": 258,
-    "tipo_livro": "teorico",
-    "densidade": "media",
+    "tipo_livro": "hibrido",
+    "densidade": "densa",
     "nivel_natural": "intermediario",
     "linguagens": [],
     "niveis": {
@@ -110,45 +111,45 @@
     "senioridades": {
       "Junior": {
         "capitulos": 14,
-        "total_horas": 29.13,
-        "semanas": 5
+        "total_horas": 49.72,
+        "semanas": 9
       },
       "Pleno": {
         "capitulos": 11,
-        "total_horas": 15.03,
-        "semanas": 3
+        "total_horas": 25.85,
+        "semanas": 5
       },
       "Senior": {
         "capitulos": 2,
-        "total_horas": 2.9,
+        "total_horas": 5.21,
         "semanas": 1
       }
     }
   },
   "sweigart": {
-    "titulo": "Al Sweigart",
+    "titulo": "Automatize tarefas maçantes com Python",
     "capitulos": 24,
     "paginas_conteudo": 582,
-    "tipo_livro": "teorico",
+    "tipo_livro": "pratico",
     "densidade": "media",
     "nivel_natural": "iniciante",
     "linguagens": [
       "Python"
     ],
     "niveis": {
-      "iniciante": 14,
-      "intermediario": 10
+      "iniciante": 17,
+      "intermediario": 7
     },
     "senioridades": {
       "Junior": {
         "capitulos": 24,
-        "total_horas": 41.64,
-        "semanas": 7
+        "total_horas": 71.88,
+        "semanas": 12
       },
       "Pleno": {
-        "capitulos": 10,
-        "total_horas": 16.03,
-        "semanas": 3
+        "capitulos": 7,
+        "total_horas": 20.0,
+        "semanas": 4
       },
       "Senior": {
         "capitulos": 0,
@@ -161,7 +162,7 @@
     "titulo": "Engenharia de IA",
     "capitulos": 10,
     "paginas_conteudo": 452,
-    "tipo_livro": "teorico",
+    "tipo_livro": "hibrido",
     "densidade": "media",
     "nivel_natural": "intermediario",
     "linguagens": [],
@@ -173,18 +174,18 @@
     "senioridades": {
       "Junior": {
         "capitulos": 10,
-        "total_horas": 48.83,
-        "semanas": 9
+        "total_horas": 65.81,
+        "semanas": 11
       },
       "Pleno": {
         "capitulos": 8,
-        "total_horas": 24.96,
-        "semanas": 5
+        "total_horas": 33.65,
+        "semanas": 6
       },
       "Senior": {
         "capitulos": 2,
-        "total_horas": 5.3,
-        "semanas": 1
+        "total_horas": 7.14,
+        "semanas": 2
       }
     }
   }

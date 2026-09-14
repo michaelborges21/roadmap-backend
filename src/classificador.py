@@ -41,9 +41,18 @@ class LLMIndisponivel(Exception):
     """Vira 503: modelo não configurado ou Ollama inacessível."""
 
 
-PROMPT = """Você classifica livros técnicos. Dado o título e o sumário abaixo, identifique tipo, \
-densidade, nível natural do conteúdo e linguagens de programação ensinadas (nomes curtos, como \
-"Python" ou "C"; lista vazia se o livro não ensina nenhuma linguagem). Para cada capítulo, \
+PROMPT = """Você classifica livros técnicos. Dado o título e o sumário abaixo, identifique:
+- tipo_livro: pratico = a maioria dos capítulos tem o leitor escrevendo ou executando código \
+(tutoriais, projetos, exercícios de programação); teorico = conceitos, decisões e discussão, \
+sem código para praticar; hibrido = as duas coisas em proporção parecida.
+- densidade: leve = linguagem introdutória, poucos conceitos novos por capítulo; densa = \
+matemática, formalismo ou muitos conceitos novos por capítulo; media = entre os dois.
+- nivel_natural: para quem o livro foi escrito. iniciante = quem está começando no assunto; \
+intermediario = quem já trabalha com o assunto e quer se aprofundar; avancado = especialistas. \
+Julgue pelo público do livro inteiro, não pelo capítulo mais difícil.
+- linguagens de programação ensinadas (nomes curtos, como "Python" ou "C"; lista vazia se o \
+livro não ensina nenhuma linguagem).
+Para cada capítulo, \
 julgue o nível do conteúdo (iniciante = fundamentos que um profissional pleno já domina; \
 intermediario = exige base prévia; avancado = aproveitado mesmo por quem já é sênior) e um peso \
 relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo."""
