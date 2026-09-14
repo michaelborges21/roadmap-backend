@@ -110,7 +110,8 @@ def titulo_cip(linhas: list[str]) -> str | None:
     if ini is None:
         return None
     bloco = linhas[ini : ini + 15]
-    fim = next((i for i, l in enumerate(bloco) if " / " in l), None)
+    # A barra pode fechar a linha ("...para verdadeiros iniciantes /").
+    fim = next((i for i, l in enumerate(bloco) if re.search(r"\s/(\s|$)", l)), None)
     autor = max((i for i in range(fim) if CIP_AUTOR.search(bloco[i])), default=None) if fim else None
     if autor is None:
         return None

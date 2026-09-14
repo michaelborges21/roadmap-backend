@@ -39,6 +39,11 @@ def test_richards_golden():
     assert ext.titulo == "Fundamentos da arquitetura de software"
 
 
+def test_titulo_cip_com_barra_no_fim_da_linha():
+    # Sem isso o título caía no fallback de maior fonte da capa: "Al Sweigart".
+    assert extraido(FIXTURES / "sumario-9788575229644.pdf").titulo == "Automatize tarefas maçantes com Python"
+
+
 def test_amostra_com_corpo_le_so_sumario():
     ext = extraido(GERON)
     assert len(ext.capitulos) == 19
