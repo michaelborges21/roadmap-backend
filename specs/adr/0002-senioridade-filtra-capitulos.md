@@ -44,6 +44,29 @@ dizer **o que** cada pessoa precisa ler, não só quanto tempo leva.
   para livros introdutórios, mas amplifica erros de julgamento.
 - Corte binário: um capítulo `intermediario` "quase avançado" some inteiro para o sênior.
 
+## Tentativa rejeitada: redefinir os níveis pelo leitor que ainda ganha com o capítulo
+
+**2026-09-14.** Para dar mais capítulos ao Senior, os níveis do prompt foram redefinidos para
+espelhar a regra de corte: iniciante = o que um pleno já domina; intermediario = o que um pleno
+ainda não domina, mas um sênior já conhece; avancado = o que acrescenta mesmo para um sênior.
+
+Critérios de aceite fixados antes de rodar: schema 100%; tipo, densidade e nível do livro
+iguais à baseline; Senior ganha capítulos em pelo menos 3 de 4 livros não-iniciantes; livro
+iniciante continua com Senior em ~0; diferenciação Junior > Pleno > Senior mantida.
+
+| Livro | Senior antes → depois |
+|---|---|
+| Richards | 1 → 13 |
+| Nelson | 0 → 3 |
+| Huyen | 2 → 2 |
+| Géron | 9 → **5** |
+| Downey | 2 → **0**, e o livro inteiro mudou: nível intermediario → iniciante, densidade densa → media |
+| Sweigart | 0 → 0 |
+
+**Rejeitada e revertida.** Resolveu o caso que a motivou (Richards), mas piorou Géron e
+Downey e alterou campos do livro que a mudança não deveria tocar. Próximas tentativas
+devem mudar uma definição por vez e ser medidas com o mesmo protocolo.
+
 ## Salvaguardas
 
 - `tests/eval/test_propriedades.py::test_diferenca_entre_niveis` falha se a senioridade não
