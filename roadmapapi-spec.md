@@ -320,13 +320,26 @@ Baseline em `evals/baseline.json`. Toda mudança de prompt ou constante compara 
 Entra **depois** do harness verde. Sem baseline não há como provar melhora.
 
 - Chunk = título do capítulo + `subtopicos` (1 chunk por capítulo). Nunca corpo do livro.
-- Embedding local via Ollama.
-- Uso: alimentar o Classificador com contexto real em vez de inferência pelo título.
-- `GET /roadmap/{id}/explicar?capitulo=N`: recupera chunk + `fatores` persistidos, LLM
-  redige a explicação.
+  Criado na primeira classificação do livro.
+- Embedding local via Ollama: `embeddinggemma` (checkpoint 1) — multilíngue, 768 dim, 2048
+  tokens; prefixo de similaridade simétrica em `config.yaml` (`rag.prefixo`).
+- Uso: alimentar o Classificador com contexto real em vez de inferência pelo título. O
+  sumário do próprio livro o classificador já vê inteiro; o contexto novo são **capítulos
+  parecidos de outros livros já classificados**, com o `nivel` e o `peso` que receberam
+  (top `referencias_por_capitulo`, acima de `similaridade_min`), como referência de calibração.
+- Chave de liga: `rag.ativo` em `config.yaml`, `false` até passar no critério de aceite.
+  Desligado, o prompt é idêntico ao da baseline.
+- Medição: `tests/eval/test_rag.py` monta referências leave-one-out do golden set numa
+  transação desfeita no fim, compara variância com e sem RAG e grava `evals/rag.json`.
+- `GET /roadmaps/{id}/explicar?capitulo=N`: recupera texto do capítulo + `fatores`
+  persistidos (ou o motivo da exclusão), LLM redige a explicação via structured output.
 
-**Critério de aceite:** variância do golden set cai, ou `tipo_livro` bate mais com
-julgamento humano. Se nenhum dos dois, RAG não vai pra produção.
+**Critério de aceite:** variância do golden set cai (CV das horas com RAG < CV sem RAG, mesmo
+N). Se não cair, RAG não vai pra produção.
+
+O critério alternativo "`tipo_livro` bate mais com julgamento humano" foi descartado
+(2026-09-14): o julgamento depende de quanto a pessoa conhece cada livro — de um ela leu, de
+outro só ouviu falar — então não é uma referência estável.
 
 ---
 

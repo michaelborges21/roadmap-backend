@@ -7,7 +7,17 @@ from types import SimpleNamespace
 import pytest
 
 from src import classificador
-from src.classificador import Capa, Classificacao, LLMIndisponivel, RespostaLLMInvalida, classificar, ler_capa
+from src.classificador import (
+    Capa,
+    Classificacao,
+    Explicacao,
+    LLMIndisponivel,
+    Referencia,
+    RespostaLLMInvalida,
+    classificar,
+    explicar,
+    ler_capa,
+)
 from src.extracao import Capitulo
 
 CAPS = [
@@ -76,6 +86,28 @@ async def test_sem_modelo_configurado(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(classificador.config.llm, "modelo_classificador", None)
     with pytest.raises(LLMIndisponivel, match="não configurado"):
         await classificar("Programando em C", CAPS)
+
+
+@pytest.mark.asyncio
+async def test_referencias_rag_entram_no_prompt_so_quando_existem(llm: Callable[[dict], list[dict]]):
+    chamadas = llm(VALIDA)
+    refs = {2: [Referencia(livro="Outro livro", capitulo="Ponteiros e memória", nivel="avancado", peso=1.5, similaridade=0.9)]}
+    await classificar("Programando em C", CAPS, refs)
+    usuario = chamadas[0]["messages"][1]["content"]  # type: ignore[index]
+    assert '≈ parecido com "Ponteiros e memória" (Outro livro): avancado, peso 1.5' in usuario
+
+    sem_refs = llm(VALIDA)
+    await classificar("Programando em C", CAPS)
+    assert "≈" not in sem_refs[0]["messages"][1]["content"]  # type: ignore[index]  # prompt idêntico ao da baseline
+
+
+@pytest.mark.asyncio
+async def test_explicar_recebe_dados_calculados(llm: Callable[[dict], list[dict]]):
+    chamadas = llm({"explicacao": "O capítulo é avançado e pesa 1.5."})
+    resposta = await explicar("Ponteiros\nAritmética", {"fatores": {"peso": 1.5}})
+    assert resposta.explicacao
+    assert chamadas[0]["format"] == Explicacao.model_json_schema()
+    assert '"peso": 1.5' in chamadas[0]["messages"][1]["content"]  # type: ignore[index]
 
 
 @pytest.mark.asyncio

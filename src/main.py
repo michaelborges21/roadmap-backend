@@ -9,10 +9,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.calculo import Plano, Senioridade, planejar
-from src.classificador import Classificacao, LLMIndisponivel, RespostaLLMInvalida, classificar, ler_capa
+from src.classificador import (
+    Classificacao,
+    Explicacao,
+    LLMIndisponivel,
+    RespostaLLMInvalida,
+    classificar,
+    explicar,
+    ler_capa,
+)
+from src.config import config
 from src.db import get_session
 from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair
 from src.models import Book, Roadmap
+from src.rag import indexar, referencias, texto_chunk
 
 app = FastAPI(title="roadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -86,7 +96,9 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
 
     capitulos = [Capitulo.model_validate(c) for c in book.capitulos]
     if book.classificacao is None:  # cache entre usuários: classifica uma vez por livro
-        book.classificacao = (await classificar(book.titulo, capitulos)).model_dump()
+        await indexar(session, book, capitulos)
+        refs = await referencias(session, book.id, capitulos) if config.rag.ativo else None
+        book.classificacao = (await classificar(book.titulo, capitulos, refs)).model_dump()
     plano = planejar(capitulos, Classificacao.model_validate(book.classificacao), pedido.senioridade, pedido.disponibilidade_horas)
 
     roadmap = Roadmap(
@@ -98,3 +110,29 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
     session.add(roadmap)
     await session.commit()
     return RoadmapCriado(id=roadmap.id, book_id=book.id, **plano.model_dump())
+
+
+@app.get("/roadmaps/{roadmap_id}/explicar")
+async def explicar_capitulo(roadmap_id: int, capitulo: int, session: SessionDep) -> Explicacao:
+    """Responde "por que esse capítulo deu 6h?" com os fatores persistidos; o LLM só redige."""
+    roadmap = await session.get(Roadmap, roadmap_id)
+    if not roadmap:
+        raise HTTPException(404, "Roadmap não encontrado.")
+    plano = Plano.model_validate(roadmap.plano)
+    book = await session.get(Book, roadmap.book_id)
+    cap = next((Capitulo.model_validate(c) for c in book.capitulos if c["num"] == capitulo), None) if book else None
+    horas = next((h for h in plano.capitulos if h.num == capitulo), None)
+    excluido = next((e for e in plano.excluidos if e.num == capitulo), None)
+    if cap is None or (horas is None and excluido is None):
+        raise HTTPException(404, f"Capítulo {capitulo} não existe neste roadmap.")
+
+    dados: dict[str, object] = {"senioridade_do_leitor": plano.senioridade}
+    if horas:
+        dados |= {
+            "nivel_do_capitulo": horas.nivel,
+            "horas": {k: round(getattr(horas, k), 1) for k in ("leitura", "codigo", "escrita", "total")},
+            "fatores": horas.fatores.model_dump(),
+        }
+    else:
+        dados |= {"nivel_do_capitulo": excluido.nivel, "fora_do_cronograma": "nível do capítulo abaixo da senioridade do leitor"}  # type: ignore[union-attr]
+    return await explicar(texto_chunk(cap), dados)

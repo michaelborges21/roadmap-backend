@@ -36,16 +36,25 @@ class Calculo(BaseModel):
 class LLM(BaseModel):
     modelo_classificador: str | None
     modelo_visao: str | None
+    modelo_embedding: str | None
     temperature: float
     num_ctx: int
     num_predict: int
     timeout_s: float
 
 
+class Rag(BaseModel):
+    ativo: bool
+    prefixo: str
+    referencias_por_capitulo: int
+    similaridade_min: float
+
+
 class Config(BaseModel):
     extracao: Extracao
     calculo: Calculo
     llm: LLM
+    rag: Rag
 
 
 settings = Settings()

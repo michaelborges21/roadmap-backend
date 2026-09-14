@@ -30,9 +30,22 @@ llm:
   # Vazio → API responde 503.
   modelo_classificador: gemma4:12b
   modelo_visao: gemma4:12b
+  # Multilíngue (sumários em português), 768 dim, 2048 tokens (maior chunk medido: ~580).
+  modelo_embedding: embeddinggemma
   temperature: 0
   # Defaults do Ollama são armadilha: num_ctx automático pode ser menor que um sumário real,
   # e sem num_predict/timeout a requisição pode nunca voltar.
   num_ctx: 16384
   num_predict: 4096
   timeout_s: 180
+
+rag:
+  # Experimental (spec 4): só vai a true se a medição contra a baseline mostrar ganho.
+  ativo: false
+  # Prompt de similaridade simétrica do embeddinggemma (capítulo × capítulo).
+  prefixo: "task: sentence similarity | query: "
+  referencias_por_capitulo: 2
+  # Checkpoint 3 (2026-09-14): abaixo disso a referência não entra no prompt. Medido no golden
+  # set: melhor vizinho entre livros vai de 0,67 a 0,84 (mediana 0,73 = assunto só vagamente
+  # parecido; ~0,82 = mesmo assunto). 0.6 deixava passar todos os capítulos.
+  similaridade_min: 0.78

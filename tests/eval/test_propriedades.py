@@ -1,6 +1,6 @@
 """Property tests com LLM real (spec 3). Fora do CI padrão: `uv run pytest -m eval`.
 
-O golden set é classificado UMA vez por sessão e reaproveitado por todos os testes.
+O golden set é classificado UMA vez por sessão (tests/eval/conftest.py) e reaproveitado.
 Baseline: `ATUALIZAR_BASELINE=1 uv run pytest -m eval` grava evals/baseline.json;
 sem a variável, a rodada compara contra ele.
 """
@@ -8,58 +8,29 @@ sem a variável, a rodada compara contra ele.
 import asyncio
 import json
 import os
-import statistics
 from collections import Counter
 from itertools import combinations
-from pathlib import Path
 
 import pytest
 
 from src.calculo import SENIORIDADES, calcular, planejar
-from src.classificador import Classificacao, RespostaLLMInvalida, classificar, ler_capa
-from src.extracao import Capitulo, Extraido, extrair
+from src.classificador import Classificacao, classificar, ler_capa
+from src.extracao import Capitulo, Extraido
+from tests.eval.golden import (
+    DISPONIBILIDADE,
+    FIXTURES,
+    LIVRO_VARIANCIA,
+    N_VARIANCIA,
+    RAIZ,
+    TOLERANCIA,
+    Resultado,
+    cv_horas,
+    validos,
+)
 
 pytestmark = pytest.mark.eval
 
-RAIZ = Path(__file__).parents[2]
-FIXTURES = RAIZ / "test_files"
 BASELINE = RAIZ / "evals" / "baseline.json"
-GOLDEN = {
-    "richards": "sumario-9788575229682.pdf",
-    "geron": "AMOSTRA_MaosAObraAprendizadoDeMaquinaComScikit-LearnKerasTensorFlow.pdf",
-    "nelson": "sumario-9788575229170.pdf",
-    "downey": "sumario-9788575229606.pdf",
-    "sweigart": "sumario-9788575229644.pdf",
-    "huyen": "sumario-9788575229965.pdf",
-}
-DISPONIBILIDADE = 6.0
-N_VARIANCIA = int(os.environ.get("N_VARIANCIA", "10"))
-LIVRO_VARIANCIA = "huyen"  # menor sumário do golden set (10 capítulos): 10 chamadas custam menos
-TOLERANCIA = 0.15
-
-Resultado = tuple[Extraido, Classificacao | RespostaLLMInvalida]
-
-
-@pytest.fixture(scope="session")
-def golden() -> dict[str, Resultado]:
-    livros = {nome: extrair((FIXTURES / arq).read_bytes()) for nome, arq in GOLDEN.items() if (FIXTURES / arq).exists()}
-    if not livros:
-        pytest.skip("golden set ausente em test_files/")
-
-    async def classificar_todos() -> dict[str, Resultado]:
-        resultados: dict[str, Resultado] = {}
-        for nome, ext in livros.items():
-            try:
-                resultados[nome] = (ext, await classificar(ext.titulo, ext.capitulos))
-            except RespostaLLMInvalida as exc:
-                resultados[nome] = (ext, exc)
-        return resultados
-
-    return asyncio.run(classificar_todos())
-
-
-def validos(golden: dict[str, Resultado]) -> dict[str, tuple[Extraido, Classificacao]]:
-    return {n: (e, c) for n, (e, c) in golden.items() if isinstance(c, Classificacao)}
 
 
 def test_schema_100_por_cento(golden: dict[str, Resultado]):
@@ -133,9 +104,8 @@ def test_variancia(golden: dict[str, Resultado]):
     async def rodadas() -> list[Classificacao]:
         return [await classificar(ext.titulo, ext.capitulos) for _ in range(N_VARIANCIA)]
 
-    horas = [planejar(ext.capitulos, cls, "Pleno", DISPONIBILIDADE).total_horas for cls in asyncio.run(rodadas())]
-    cv = statistics.pstdev(horas) / statistics.mean(horas)
-    assert cv < TOLERANCIA, f"desvio {cv:.1%} em {N_VARIANCIA} rodadas: {[round(h, 1) for h in horas]}"
+    cv = cv_horas(ext, asyncio.run(rodadas()))
+    assert cv < TOLERANCIA, f"desvio {cv:.1%} em {N_VARIANCIA} rodadas"
 
 
 def resumo(ext: Extraido, cls: Classificacao) -> dict[str, object]:
