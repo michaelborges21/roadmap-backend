@@ -170,8 +170,9 @@ A capa fornece título, subtítulo, autor, edição e — quando o título nomei
 alimenta `linguagens` do classificador. Não fornece página nenhuma.
 
 Título: da ficha CIP quando houver (texto antes de ` / ` e de ` : `); senão, a linha de
-maior fonte da página 1. Capa em imagem (JPEG/PNG): modelo de visão local — decidido no
-checkpoint 4; até o modelo ser escolhido (checkpoint 1), responde `415`.
+maior fonte da página 1. Capa em imagem (JPEG/PNG): modelo de visão local (checkpoint 4),
+`gemma4:12b` (checkpoint 1) — structured output com título, subtítulo, autor e edição;
+nunca páginas.
 
 Resultado: `Book` com `origem="capa"`, `capitulos=[]`, sem cronograma. A API responde `201`
 com o livro criado e sinaliza que falta o sumário. Nunca inventa páginas.

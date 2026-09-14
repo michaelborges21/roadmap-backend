@@ -25,8 +25,11 @@ calculo:
   horas_por_sessao: 2
 
 llm:
-  # Checkpoint 1: nenhum modelo fixado ainda. Vazio → API responde 503.
-  modelo_classificador: null
+  # Checkpoint 1 (2026-09-14): Gemma 4 12B nos dois papéis — um modelo só na VRAM de 12GB.
+  # qwen2.5vl:7b foi testado antes e falhou: 99s e resposta fora do schema no Richards.
+  # Vazio → API responde 503.
+  modelo_classificador: gemma4:12b
+  modelo_visao: gemma4:12b
   temperature: 0
   # Defaults do Ollama são armadilha: num_ctx automático pode ser menor que um sumário real,
   # e sem num_predict/timeout a requisição pode nunca voltar.

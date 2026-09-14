@@ -9,13 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.calculo import Plano, Senioridade, planejar
-from src.classificador import Classificacao, ClassificacaoInvalida, LLMIndisponivel, classificar
+from src.classificador import Classificacao, LLMIndisponivel, RespostaLLMInvalida, classificar, ler_capa
 from src.db import get_session
 from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair
 from src.models import Book, Roadmap
 
 app = FastAPI(title="roadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+IMAGENS = {"image/jpeg", "image/png"}
 
 
 class BookCriado(Extraido):
@@ -38,8 +39,8 @@ async def extracao_ambigua(request: Request, exc: ExtracaoAmbigua) -> JSONRespon
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
-@app.exception_handler(ClassificacaoInvalida)
-async def classificacao_invalida(request: Request, exc: ClassificacaoInvalida) -> JSONResponse:
+@app.exception_handler(RespostaLLMInvalida)
+async def resposta_llm_invalida(request: Request, exc: RespostaLLMInvalida) -> JSONResponse:
     return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
@@ -50,10 +51,8 @@ async def llm_indisponivel(request: Request, exc: LLMIndisponivel) -> JSONRespon
 
 @app.post("/books", status_code=201)
 async def criar_book(arquivo: UploadFile, response: Response, session: SessionDep) -> BookCriado:
-    if arquivo.content_type in {"image/jpeg", "image/png"}:
-        raise HTTPException(415, "Capa em imagem ainda não suportada: modelo de visão local pendente de escolha.")
-    if arquivo.content_type != "application/pdf":
-        raise HTTPException(415, "Envie um PDF com o sumário ou a capa do livro.")
+    if arquivo.content_type not in IMAGENS | {"application/pdf"}:
+        raise HTTPException(415, "Envie um PDF (sumário ou capa) ou a imagem da capa (JPEG/PNG).")
 
     dados = await arquivo.read()
     hash_fonte = hashlib.sha256(dados).hexdigest()
@@ -61,8 +60,13 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
     if book:
         response.status_code = 200
     else:
-        # pdfplumber é CPU-bound e síncrono; fora do event loop.
-        ext = await run_in_threadpool(extrair, dados)
+        if arquivo.content_type in IMAGENS:
+            capa = await ler_capa(dados)
+            titulo = f"{capa.titulo}: {capa.subtitulo}" if capa.subtitulo else capa.titulo
+            ext = Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
+        else:
+            # pdfplumber é CPU-bound e síncrono; fora do event loop.
+            ext = await run_in_threadpool(extrair, dados)
         book = Book(hash_fonte=hash_fonte, **ext.model_dump(mode="json"))
         session.add(book)
         await session.commit()

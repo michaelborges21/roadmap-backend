@@ -1,4 +1,4 @@
-"""Classificador com Ollama mockado: contrato de entrada/saída, sem LLM real."""
+"""Chamadas ao LLM com Ollama mockado: contrato de entrada/saída, sem modelo real."""
 
 import json
 from collections.abc import Callable
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from src import classificador
-from src.classificador import Classificacao, ClassificacaoInvalida, LLMIndisponivel, classificar
+from src.classificador import Capa, Classificacao, LLMIndisponivel, RespostaLLMInvalida, classificar, ler_capa
 from src.extracao import Capitulo
 
 CAPS = [
@@ -30,10 +30,13 @@ def llm(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict], list[dict]]:
 
         async def chat(self: object, **kwargs: object) -> SimpleNamespace:
             chamadas.append(kwargs)
-            return SimpleNamespace(message=SimpleNamespace(content=json.dumps(conteudo)))
+            return SimpleNamespace(
+                message=SimpleNamespace(content=json.dumps(conteudo)), done_reason="stop", prompt_eval_count=100
+            )
 
         monkeypatch.setattr(classificador.AsyncClient, "chat", chat)
         monkeypatch.setattr(classificador.config.llm, "modelo_classificador", "modelo-fake")
+        monkeypatch.setattr(classificador.config.llm, "modelo_visao", "modelo-fake")
         return chamadas
 
     return configurar
@@ -57,14 +60,14 @@ async def test_resposta_valida_e_contrato_da_chamada(llm: Callable[[dict], list[
 @pytest.mark.asyncio
 async def test_capitulo_faltando_e_invalido(llm: Callable[[dict], list[dict]]):
     llm({**VALIDA, "capitulos": VALIDA["capitulos"][:1]})
-    with pytest.raises(ClassificacaoInvalida):
+    with pytest.raises(RespostaLLMInvalida):
         await classificar("Programando em C", CAPS)
 
 
 @pytest.mark.asyncio
 async def test_peso_fora_da_faixa_e_invalido(llm: Callable[[dict], list[dict]]):
     llm({**VALIDA, "capitulos": [{"num": 1, "nivel": "iniciante", "peso": 3.0}, VALIDA["capitulos"][1]]})
-    with pytest.raises(ClassificacaoInvalida):
+    with pytest.raises(RespostaLLMInvalida):
         await classificar("Programando em C", CAPS)
 
 
@@ -73,3 +76,19 @@ async def test_sem_modelo_configurado(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(classificador.config.llm, "modelo_classificador", None)
     with pytest.raises(LLMIndisponivel, match="não configurado"):
         await classificar("Programando em C", CAPS)
+
+
+@pytest.mark.asyncio
+async def test_capa_em_imagem(llm: Callable[[dict], list[dict]]):
+    chamadas = llm({"titulo": "JavaScript", "subtitulo": "O guia definitivo", "autor": "David Flanagan", "edicao": "7ª"})
+    capa = await ler_capa(b"\xff\xd8bytes-jpeg")
+    assert capa.titulo == "JavaScript"
+    assert chamadas[0]["format"] == Capa.model_json_schema()
+    assert chamadas[0]["messages"][0]["images"] == [b"\xff\xd8bytes-jpeg"]  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_capa_sem_titulo_e_invalida(llm: Callable[[dict], list[dict]]):
+    llm({"titulo": "", "subtitulo": None, "autor": None, "edicao": None})
+    with pytest.raises(RespostaLLMInvalida):
+        await ler_capa(b"img")

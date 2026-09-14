@@ -35,6 +35,7 @@ class Calculo(BaseModel):
 
 class LLM(BaseModel):
     modelo_classificador: str | None
+    modelo_visao: str | None
     temperature: float
     num_ctx: int
     num_predict: int
