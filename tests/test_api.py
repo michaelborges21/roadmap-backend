@@ -1,13 +1,15 @@
 """Fluxo HTTP e RAG contra o Postgres do compose, com LLM e embedding mockados. Skip se o banco estiver fora."""
 
+import hashlib
 import uuid
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, func, select, text
 
 from src import main, rag
-from src.classificador import CapituloClassificado, Classificacao, Explicacao
+from src.classificador import Capa, CapituloClassificado, Classificacao, Explicacao
 from src.db import Session, engine
 from src.extracao import Capitulo
 from src.models import Book, Chunk, Roadmap
@@ -22,6 +24,7 @@ CLS = Classificacao(
     capitulos=[CapituloClassificado(num=i, nivel=n, peso=1.0) for i, n in [(1, "iniciante"), (2, "intermediario"), (3, "avancado")]],
 )
 PEDIDO = {"senioridade": "Pleno", "disponibilidade_horas": 5}
+FIXTURES = Path(__file__).parent.parent / "test_files"
 E1 = [1.0] + [0.0] * 767
 E2 = [0.0, 1.0] + [0.0] * 766
 
@@ -93,6 +96,48 @@ async def test_fluxo_roadmap(monkeypatch: pytest.MonkeyPatch):
             await s.execute(delete(Roadmap).where(Roadmap.book_id.in_(ids)))
             await s.execute(delete(Chunk).where(Chunk.book_id.in_(ids)))
             await s.execute(delete(Book).where(Book.id.in_(ids)))
+            await s.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_upload_book_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
+    sumario, sem_fronteira = FIXTURES / "sumario-9788575229682.pdf", FIXTURES / "sumario-9788575228173.pdf"
+    if not (sumario.exists() and sem_fronteira.exists()):
+        pytest.skip("fixtures ausentes em test_files/")
+    if not await banco_no_ar():
+        pytest.skip("Postgres fora do ar (docker compose up -d db)")
+
+    async def ler_capa_fake(imagem: bytes) -> Capa:
+        return Capa(titulo="JavaScript", subtitulo="O guia definitivo", autor=None, edicao=None)
+
+    monkeypatch.setattr(main, "ler_capa", ler_capa_fake)
+    # Bytes após o %%EOF mudam o hash sem afetar a leitura: não colide com livros reais do banco.
+    marca = f"\n%{uuid.uuid4().hex}\n".encode()
+    pdf, pdf_ambiguo, imagem = sumario.read_bytes() + marca, sem_fronteira.read_bytes() + marca, b"\xff\xd8" + marca
+    hashes = [hashlib.sha256(d).hexdigest() for d in (pdf, imagem)]
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://teste") as http:
+            envio = lambda nome, dados, tipo: http.post("/books", files={"arquivo": (nome, dados, tipo)})  # noqa: E731
+
+            criado = await envio("sumario.pdf", pdf, "application/pdf")
+            assert criado.status_code == 201, criado.text
+            assert (len(criado.json()["capitulos"]), criado.json()["falta_sumario"]) == (27, False)
+
+            repetido = await envio("outro-nome.pdf", pdf, "application/pdf")
+            assert (repetido.status_code, repetido.json()["id"]) == (200, criado.json()["id"])  # cache por hash
+
+            capa = await envio("capa.jpg", imagem, "image/jpeg")
+            assert capa.status_code == 201, capa.text
+            assert (capa.json()["titulo"], capa.json()["origem"], capa.json()["falta_sumario"]) == ("JavaScript: O guia definitivo", "capa", True)
+
+            assert (await envio("notas.txt", b"texto", "text/plain")).status_code == 415
+            ambiguo = await envio("sumario.pdf", pdf_ambiguo, "application/pdf")
+            assert ambiguo.status_code == 422 and "sem fronteira final" in ambiguo.json()["detail"]
+    finally:
+        async with Session() as s:
+            await s.execute(delete(Book).where(Book.hash_fonte.in_(hashes)))
             await s.commit()
         await engine.dispose()
 
