@@ -7,6 +7,11 @@ API que gera cronogramas de estudo personalizados a partir de arquivos de  sumá
 Leia a spec antes de qualquer alteração em `src/`. Os princípios não-negociáveis
 da seção 1 valem para todo o código.
 
+**Specs formais:** `specs/requisitos.md` (todo RF ligado ao teste que o verifica,
+vigiado por `tests/test_specs.py`), `specs/api.md` (contrato HTTP) e `specs/adr/`
+(decisões de arquitetura). Requisito novo entra em `requisitos.md` com o teste
+que o verifica; decisão de arquitetura vira ADR novo em `specs/adr/`.
+
 ## Ambiente
 
 - Python 3.12.9, gerenciado com **uv** em modo `--no-package`
@@ -63,6 +68,8 @@ Não decidir sozinho nestes pontos. Parar, explicar o trade-off e aguardar respo
 
 1. **Escolha de modelo do Ollama** (classificador ou embedding) — avisar antes de
    fixar qualquer modelo, para pesquisa prévia.
+   Decidido (2026-09-14): `gemma4:12b` (classificador, visão, explicação),
+   `embeddinggemma` (embedding) — ver `specs/adr/`.
 2. **Antes de rodar testes com LLM real** (`pytest -m eval`) — avisar para troca de
    modelo/esforço do lado Anthropic.
 3. **Mudança em constantes de `config.yaml`** — é calibração, não implementação.
@@ -70,5 +77,9 @@ Não decidir sozinho nestes pontos. Parar, explicar o trade-off e aguardar respo
 
 ## Fora de escopo (v1)
 
-OCR de capa / multimodal, Gemini como segundo provider, autenticação e persistência
-de progresso. Não implementar, não deixar hook preparado.
+Gemini como segundo provider, autenticação e persistência de progresso. Não
+implementar, não deixar hook preparado.
+
+OCR de capa / multimodal **saiu do escopo original em 2026-09-14** (checkpoint 4 da
+spec, "capa em imagem"): capa em imagem (JPEG/PNG) é lida por modelo de visão local
+(`gemma4:12b`), ver `specs/adr/` e `roadmapapi-spec.md` §2.5.
