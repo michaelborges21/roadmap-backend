@@ -201,13 +201,18 @@ Lista de objetos em vez de `dict[int, float]`: chave inteira vira `additionalPro
 JSON schema, que modelo local segue mal. Resposta fora do schema, ou sem exatamente um
 julgamento por capítulo → `502`. Modelo não configurado ou Ollama fora → `503`.
 
-Prompt curto, sem regras de cálculo — elas não são dele:
+Prompt curto, sem regras de cálculo — elas não são dele. Texto vivo em
+`src/classificador.py` (`PROMPT`); não duplicar aqui. Regras que ele precisa manter:
 
-> Você classifica livros técnicos. Dado o título e o sumário abaixo, identifique tipo,
-> densidade, nível natural do conteúdo e linguagens de programação abordadas. Para cada
-> capítulo, julgue o nível do conteúdo (iniciante = fundamentos que um profissional pleno
-> já domina; intermediario = exige base prévia; avancado = aproveitado mesmo por quem já é
-> sênior) e um peso relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo.
+- **Todo campo categórico tem definição própria** (`tipo_livro`, `densidade`,
+  `nivel_natural`, `nivel` do capítulo). Campo sem definição deriva: sem a de
+  `nivel_natural`, o modelo marcou "avancado" em 5 de 6 livros.
+- `linguagens`: nomes curtos, lista vazia se o livro não ensina linguagem.
+- Frase de consistência ("capítulos com profundidade e esforço equivalentes recebem o mesmo
+  nível e peso"): CV na Huyen caiu de 8,1% para 0,0% (N=5).
+- "Não estime tempo."
+- Mudança de prompt só entra depois de comparar contra `evals/baseline.json`, com controle
+  que isole a mudança.
 
 Páginas não vão no prompt: sem número à vista, o modelo não é convidado a fazer conta.
 
@@ -340,6 +345,12 @@ N). Se não cair, RAG não vai pra produção.
 O critério alternativo "`tipo_livro` bate mais com julgamento humano" foi descartado
 (2026-09-14): o julgamento depende de quanto a pessoa conhece cada livro — de um ela leu, de
 outro só ouviu falar — então não é uma referência estável.
+
+**Resultado (2026-09-14): RAG não aceito, `rag.ativo` segue `false`.** Na Huyen (N=5), a
+variância foi 8,1% sem RAG e 0,0% com RAG, mas só 1 de 10 capítulos recebeu referência.
+O controle — nota de referências no prompt, nenhuma referência — deu 0,9%: o ganho vinha
+do texto extra no prompt, não da busca. Com só 6 livros de áreas diferentes, 10 de 109
+capítulos têm vizinho acima de 0,78; reavaliar quando o corpus crescer.
 
 ---
 

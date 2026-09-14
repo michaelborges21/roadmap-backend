@@ -8,24 +8,24 @@
     "nivel_natural": "intermediario",
     "linguagens": [],
     "niveis": {
-      "iniciante": 2,
-      "intermediario": 24,
+      "iniciante": 3,
+      "intermediario": 23,
       "avancado": 1
     },
     "senioridades": {
       "Junior": {
         "capitulos": 27,
-        "total_horas": 55.74,
+        "total_horas": 57.17,
         "semanas": 10
       },
       "Pleno": {
-        "capitulos": 25,
-        "total_horas": 31.89,
+        "capitulos": 24,
+        "total_horas": 31.7,
         "semanas": 6
       },
       "Senior": {
         "capitulos": 1,
-        "total_horas": 1.81,
+        "total_horas": 1.93,
         "semanas": 1
       }
     }
@@ -48,17 +48,17 @@
     "senioridades": {
       "Junior": {
         "capitulos": 19,
-        "total_horas": 105.53,
+        "total_horas": 103.59,
         "semanas": 18
       },
       "Pleno": {
         "capitulos": 15,
-        "total_horas": 53.47,
+        "total_horas": 52.32,
         "semanas": 9
       },
       "Senior": {
         "capitulos": 9,
-        "total_horas": 26.86,
+        "total_horas": 26.06,
         "semanas": 5
       }
     }
@@ -74,18 +74,18 @@
       "Python"
     ],
     "niveis": {
-      "iniciante": 7,
-      "intermediario": 8
+      "iniciante": 6,
+      "intermediario": 9
     },
     "senioridades": {
       "Junior": {
         "capitulos": 15,
-        "total_horas": 32.89,
+        "total_horas": 32.98,
         "semanas": 6
       },
       "Pleno": {
-        "capitulos": 8,
-        "total_horas": 12.48,
+        "capitulos": 9,
+        "total_horas": 13.83,
         "semanas": 3
       },
       "Senior": {
@@ -104,24 +104,24 @@
     "nivel_natural": "intermediario",
     "linguagens": [],
     "niveis": {
-      "iniciante": 3,
-      "intermediario": 9,
+      "iniciante": 7,
+      "intermediario": 5,
       "avancado": 2
     },
     "senioridades": {
       "Junior": {
         "capitulos": 14,
-        "total_horas": 49.72,
-        "semanas": 9
+        "total_horas": 42.92,
+        "semanas": 8
       },
       "Pleno": {
-        "capitulos": 11,
-        "total_horas": 25.85,
-        "semanas": 5
+        "capitulos": 7,
+        "total_horas": 16.03,
+        "semanas": 3
       },
       "Senior": {
         "capitulos": 2,
-        "total_horas": 5.21,
+        "total_horas": 4.29,
         "semanas": 1
       }
     }
@@ -143,13 +143,13 @@
     "senioridades": {
       "Junior": {
         "capitulos": 24,
-        "total_horas": 71.88,
-        "semanas": 12
+        "total_horas": 65.99,
+        "semanas": 11
       },
       "Pleno": {
         "capitulos": 7,
-        "total_horas": 20.0,
-        "semanas": 4
+        "total_horas": 16.96,
+        "semanas": 3
       },
       "Senior": {
         "capitulos": 0,
@@ -174,18 +174,18 @@
     "senioridades": {
       "Junior": {
         "capitulos": 10,
-        "total_horas": 65.81,
+        "total_horas": 60.4,
         "semanas": 11
       },
       "Pleno": {
         "capitulos": 8,
-        "total_horas": 33.65,
+        "total_horas": 30.44,
         "semanas": 6
       },
       "Senior": {
         "capitulos": 2,
-        "total_horas": 7.14,
-        "semanas": 2
+        "total_horas": 5.92,
+        "semanas": 1
       }
     }
   }

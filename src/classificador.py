@@ -70,7 +70,9 @@ livro não ensina nenhuma linguagem).
 Para cada capítulo, \
 julgue o nível do conteúdo (iniciante = fundamentos que um profissional pleno já domina; \
 intermediario = exige base prévia; avancado = aproveitado mesmo por quem já é sênior) e um peso \
-relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo."""
+relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo.
+Julgue cada capítulo de forma consistente: capítulos com profundidade e esforço equivalentes \
+recebem o mesmo nível e o mesmo peso."""
 
 NOTA_REFERENCIAS = """Linhas com ≈ mostram como capítulos parecidos de outros livros já foram \
 julgados. Use como referência de calibração, não como resposta: o capítulo deste livro pode ser \
