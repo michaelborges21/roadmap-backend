@@ -52,6 +52,9 @@ O LLM **julga**; Python **calcula**.
 
 - **A fórmula é simples e não foi calibrada contra tempo real de estudo.** Minutos por página
   fixos por densidade são uma aproximação; os valores de `config.yaml` são os iniciais da spec.
+  Caminho de calibração: anotar o tempo real em `evals/estudo.csv` e rodar
+  `uv run python -m evals.comparar_estudo`, que compara com o previsto e sugere o ajuste (o
+  mesmo diário mede se o corte por senioridade acertou).
 - **O modelo não enxerga nuances fora das categorias.** Um capítulo com exercícios longos só
   pesa mais se o modelo traduzir isso no `peso`.
 - **O peso ainda é julgamento numérico.** Está limitado e validado, mas continua sujeito à
