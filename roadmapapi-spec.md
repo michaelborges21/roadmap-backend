@@ -358,8 +358,8 @@ capítulos têm vizinho acima de 0,78; reavaliar quando o corpus crescer.
 
 - Gemini como segundo provider — só Ollama até o harness fechar.
 - Autenticação e persistência de progresso.
-- OCR de capa: **decidido** (checkpoint 4) — modelo de visão local, pendente da escolha
-  de modelo.
+- OCR de capa: **decidido** (checkpoint 4, 2026-09-14) — modelo de visão local
+  (`gemma4:12b`), não campo de título digitado. Implementado (§2.5).
 
 ---
 
@@ -369,12 +369,15 @@ O desenvolvimento **para e consulta** nestes pontos:
 
 1. **Escolha do modelo Ollama** (classificador e embedding) — avisar antes de fixar
    qualquer modelo, para pesquisa prévia.
+   **Decidido (2026-09-14):** `gemma4:12b` (classificador, visão, explicação) e
+   `embeddinggemma` (embedding) — ver `specs/adr/`.
 2. **Antes de rodar testes com LLM real** — avisar para troca de modelo/esforço do lado
    Anthropic.
 3. **Mudança nas constantes de `config.yaml`** — é calibração, não implementação.
 4. **Capa em imagem (JPEG/PNG):** decidir entre modelo de visão local (custo: mais um
    modelo, mais uma dimensão no harness) e campo de título digitado pelo usuário
    (custo: 4 segundos de UX). PDF de capa com camada de texto não precisa de visão.
+   **Decidido (2026-09-14):** modelo de visão local, `gemma4:12b` — ver seção 5.
 5. **Criar tabela nova ou adicionar FK.**
 
 ---
