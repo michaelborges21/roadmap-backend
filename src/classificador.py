@@ -42,13 +42,16 @@ class LLMIndisponivel(Exception):
 
 
 PROMPT = """Você classifica livros técnicos. Dado o título e o sumário abaixo, identifique tipo, \
-densidade, nível natural do conteúdo e linguagens de programação abordadas. Para cada capítulo, \
+densidade, nível natural do conteúdo e linguagens de programação ensinadas (nomes curtos, como \
+"Python" ou "C"; lista vazia se o livro não ensina nenhuma linguagem). Para cada capítulo, \
 julgue o nível do conteúdo (iniciante = fundamentos que um profissional pleno já domina; \
 intermediario = exige base prévia; avancado = aproveitado mesmo por quem já é sênior) e um peso \
 relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo."""
 
-PROMPT_CAPA = """Você lê capas de livros técnicos. Transcreva exatamente o título, o subtítulo, \
-o autor e a edição que aparecem na imagem. Campo que não aparece na capa = null. Não invente."""
+PROMPT_CAPA = """Você lê capas de livros técnicos. Transcreva exatamente o que aparece na imagem: \
+titulo = o nome do livro em destaque, sem o subtítulo; subtitulo = a linha que completa o nome \
+(ex.: "Uma abordagem moderna"); autor; edicao. Slogan ou chamada de marketing não é título nem \
+subtítulo. Campo que não aparece na capa = null. Não invente."""
 
 
 async def chat[T: BaseModel](modelo: str | None, papel: str, messages: list[dict[str, object]], schema: type[T]) -> T:
