@@ -138,7 +138,15 @@ Serve `static/index.html`, uma página sem estilo com formulários para os três
 Existe só para exercitar a API sem o Swagger; não tem schema, não tem teste próprio e pode
 mudar ou sumir sem aviso de versão. `include_in_schema=False`: não aparece em `/docs`.
 
-O passo 1 aceita até 5 arquivos por vez, enviados um de cada vez ao `POST /books` — cada um vira
-um `Book` independente, com seu `id` e seu roadmap; não existe (nem é objetivo) roadmap
-combinando vários livros, o que exigiria tabela de junção (princípio 4 da spec, "sem tabela de
-junção"). Puramente conveniência da página de teste, sem endpoint novo nem mudança de schema.
+Fluxo pensado para quem estuda, sem ids na tela (os ids da API ficam guardados na página):
+
+1. Envia até 5 arquivos, um de cada vez ao `POST /books`; cada um vira um `Book` independente e
+   aparece na lista pelo título.
+2. Com senioridade e horas escolhidas uma vez, gera **um roadmap por livro** (`POST
+   /books/{id}/roadmaps`, um livro de cada vez), cada um num bloco com o título do livro.
+3. Explicar: escolhe o **livro** e depois o **capítulo** pelo nome; a página usa o `roadmap_id` do
+   roadmap daquele livro gerado no passo 2 (a explicação depende da senioridade e das horas dele).
+
+Não existe (nem é objetivo) roadmap combinando vários livros, o que exigiria tabela de junção
+(princípio 4 da spec). A lista de livros vive só na página aberta: recarregar exige reenviar os
+arquivos, o que é instantâneo pelo cache por hash. Sem endpoint novo nem mudança de schema.

@@ -8,12 +8,14 @@
   h1 { font-size: 1.3rem; }
   section { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; }
   label { display: block; margin-top: 0.6rem; font-size: 0.9rem; }
-  input, select { padding: 0.3rem; margin-top: 0.2rem; }
+  input, select { padding: 0.3rem; margin-top: 0.2rem; max-width: 100%; }
   button { margin-top: 0.8rem; padding: 0.4rem 1rem; cursor: pointer; }
   button:disabled { cursor: wait; opacity: 0.6; }
   pre { background: #f5f5f5; padding: 0.7rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
   .erro { color: #b00020; font-weight: bold; }
   .aviso { color: #8a6d00; font-size: 0.85rem; }
+  .livro { border-left: 4px solid #4a6fa5; padding-left: 0.8rem; margin: 1.2rem 0; }
+  .livro h3 { margin: 0 0 0.3rem; }
   table { border-collapse: collapse; margin-top: 0.5rem; width: 100%; }
   th, td { border: 1px solid #ddd; padding: 0.3rem 0.5rem; font-size: 0.9rem; text-align: left; }
   th { background: #f0f0f0; }
@@ -24,20 +26,17 @@
 <p class="aviso">Interface auxiliar, sem estilo. O contrato de verdade é o Swagger em <a href="/docs">/docs</a>.</p>
 
 <section>
-  <h2>1. Enviar sumário ou capa</h2>
-  <label>Arquivos (PDF, JPEG, PNG, TXT ou MD — até 5, cada um vira um livro separado)
+  <h2>1. Enviar sumários</h2>
+  <label>Arquivos (PDF, TXT ou MD do sumário; JPEG ou PNG da capa) — até 5, cada um é um livro
     <input type="file" id="arquivo" accept=".pdf,.jpg,.jpeg,.png,.txt,.md,.markdown" multiple>
   </label>
-  <button id="btn-upload" onclick="enviarBooks()">Enviar</button>
-  <p class="aviso">Enviados um de cada vez. Capa em imagem chama o modelo de visão; os demais são instantâneos.</p>
-  <table id="tabela-upload" hidden><tr><th>arquivo</th><th>resultado</th></tr></table>
+  <button id="btn-upload" onclick="enviarLivros()">Enviar</button>
+  <button id="btn-limpar" onclick="limparLivros()">Limpar lista</button>
+  <table id="tabela-livros" hidden><tr><th>arquivo</th><th>livro</th></tr></table>
 </section>
 
 <section>
-  <h2>2. Gerar roadmap</h2>
-  <label>book_id (id do livro devolvido no passo 1)
-    <input type="number" id="book_id" value="1">
-  </label>
+  <h2>2. Gerar roadmaps</h2>
   <label>Senioridade
     <select id="senioridade">
       <option>Junior</option>
@@ -48,123 +47,172 @@
   <label>Disponibilidade (horas por semana)
     <input type="number" id="disponibilidade_horas" value="6" step="0.5" min="0.1" max="168">
   </label>
-  <button id="btn-roadmap" onclick="gerarRoadmap()">Gerar roadmap</button>
-  <p class="aviso">A primeira geração de cada livro pesquisa na web e chama o LLM: pode levar 1 a 2 minutos. As seguintes reaproveitam a pesquisa e a classificação e saem na hora.</p>
-  <div id="saida-roadmap"></div>
+  <button id="btn-roadmap" onclick="gerarRoadmaps()">Gerar roadmap de cada livro</button>
+  <p class="aviso">Um roadmap por livro, um livro de cada vez. Na primeira vez de cada livro há pesquisa na web e classificação dos capítulos (20 a 60 segundos por livro); depois sai na hora.</p>
+  <div id="saida-roadmaps"></div>
 </section>
 
 <section>
   <h2>3. Explicar um capítulo</h2>
-  <label>roadmap_id
-    <input type="number" id="roadmap_id">
+  <label>Livro
+    <select id="livro-explicar" onchange="preencherCapitulos()">
+      <option value="">— gere os roadmaps no passo 2 —</option>
+    </select>
   </label>
-  <label>Número do capítulo
-    <input type="number" id="capitulo">
+  <label>Capítulo
+    <select id="capitulo-explicar"></select>
   </label>
   <button id="btn-explicar" onclick="explicarCapitulo()">Explicar</button>
   <pre id="saida-explicar"></pre>
 </section>
 
 <script>
-async function chamar(botao, url, opcoes) {
-  botao.disabled = true;
+const MAX_ARQUIVOS = 5;
+// Livros desta sessão da página: { id, titulo, capitulos, roadmap }. Os ids da API ficam escondidos aqui.
+let livros = [];
+
+async function chamar(url, opcoes) {
   try {
     const resp = await fetch(url, opcoes);
     const corpo = await resp.json().catch(() => null);
     return { ok: resp.ok, status: resp.status, corpo };
   } catch (e) {
     return { ok: false, status: 0, corpo: { detail: `Falha de rede: ${e.message}. A API está no ar?` } };
-  } finally {
-    botao.disabled = false;
   }
 }
 
-function mostrarErro(el, resultado) {
-  el.innerHTML = `<span class="erro">${resultado.status || "erro"}: ${JSON.stringify(resultado.corpo?.detail ?? resultado.corpo)}</span>`;
+function esc(texto) {
+  return String(texto ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 }
 
-const MAX_ARQUIVOS = 5;
+function erroDe(r) {
+  return `<span class="erro">${r.status || "erro"}: ${esc(JSON.stringify(r.corpo?.detail ?? r.corpo))}</span>`;
+}
 
-async function enviarBooks() {
-  const arquivos = [...document.getElementById("arquivo").files].slice(0, MAX_ARQUIVOS);
-  const tabela = document.getElementById("tabela-upload");
-  if (!arquivos.length) { alert("Escolha ao menos um arquivo."); return; }
-  if (document.getElementById("arquivo").files.length > MAX_ARQUIVOS) {
-    alert(`Você escolheu ${document.getElementById("arquivo").files.length} arquivos; só os ${MAX_ARQUIVOS} primeiros serão enviados.`);
-  }
-
-  tabela.hidden = false;
-  tabela.querySelectorAll("tr:not(:first-child)").forEach((tr) => tr.remove());
-  let ultimoId = null;
-
-  const botao = document.getElementById("btn-upload");
+async function emLote(botao, tarefa) {
   botao.disabled = true;
-  for (const arquivo of arquivos) {
-    const linha = tabela.insertRow();
-    linha.innerHTML = `<td>${arquivo.name}</td><td>Enviando...</td>`;
-
-    const dados = new FormData();
-    dados.append("arquivo", arquivo);
-    // Sequencial (não Promise.all): capa em imagem chama o modelo de visão, e disparar vários ao
-    // mesmo tempo sobrecarrega a mesma GPU sem ganhar velocidade.
-    const r = await chamar(botao, "/books", { method: "POST", body: dados });
-    if (!r.ok) {
-      linha.cells[1].innerHTML = `<span class="erro">${r.status}: ${JSON.stringify(r.corpo?.detail ?? r.corpo)}</span>`;
-      continue;
-    }
-    ultimoId = r.corpo.id;
-    linha.cells[1].innerHTML = `<b>id ${r.corpo.id}</b> (${r.status === 200 ? "já existia" : "novo"}) — ${r.corpo.titulo} — ${r.corpo.capitulos.length} capítulos`;
-  }
-  botao.disabled = false;
-  if (ultimoId !== null) document.getElementById("book_id").value = ultimoId;
+  try { await tarefa(); } finally { botao.disabled = false; }
 }
 
-async function gerarRoadmap() {
-  const bookId = document.getElementById("book_id").value;
-  const saida = document.getElementById("saida-roadmap");
-  const corpo = {
+function limparLivros() {
+  livros = [];
+  const tabela = document.getElementById("tabela-livros");
+  tabela.querySelectorAll("tr:not(:first-child)").forEach((tr) => tr.remove());
+  tabela.hidden = true;
+  document.getElementById("saida-roadmaps").innerHTML = "";
+  atualizarSeletorLivros();
+}
+
+async function enviarLivros() {
+  const escolhidos = [...document.getElementById("arquivo").files];
+  if (!escolhidos.length) { alert("Escolha ao menos um arquivo."); return; }
+  if (escolhidos.length > MAX_ARQUIVOS) alert(`Você escolheu ${escolhidos.length} arquivos; só os ${MAX_ARQUIVOS} primeiros serão enviados.`);
+
+  const tabela = document.getElementById("tabela-livros");
+  tabela.hidden = false;
+  await emLote(document.getElementById("btn-upload"), async () => {
+    // Um de cada vez: capa em imagem chama o modelo de visão, e em paralelo só disputariam a mesma GPU.
+    for (const arquivo of escolhidos.slice(0, MAX_ARQUIVOS)) {
+      const linha = tabela.insertRow();
+      linha.innerHTML = `<td>${esc(arquivo.name)}</td><td>Enviando...</td>`;
+      const dados = new FormData();
+      dados.append("arquivo", arquivo);
+      const r = await chamar("/books", { method: "POST", body: dados });
+      if (!r.ok) { linha.cells[1].innerHTML = erroDe(r); continue; }
+
+      const b = r.corpo;
+      if (!livros.some((l) => l.id === b.id)) livros.push({ id: b.id, titulo: b.titulo, capitulos: b.capitulos, roadmap: null });
+      linha.cells[1].innerHTML = b.capitulos.length
+        ? `<b>${esc(b.titulo)}</b> — ${b.capitulos.length} capítulos`
+        : `<b>${esc(b.titulo)}</b> — <span class="aviso">só a capa: envie o sumário deste livro para gerar roadmap</span>`;
+    }
+  });
+}
+
+function blocoRoadmap(livro) {
+  const p = livro.roadmap;
+  const origem = p.paginas?.origem === "pesquisa"
+    ? `estimadas: ${p.paginas.paginas_conteudo ?? p.paginas.paginas_totais} páginas de conteúdo, de ${p.paginas.paginas_totais} pesquisadas (<a href="${esc(p.paginas.url_fonte)}" target="_blank">fonte</a>)`
+    : "do próprio sumário";
+  const linhaCap = (c) => `<tr><td>${c.num}</td><td>${esc(c.titulo)}</td><td>${c.nivel}</td><td>${c.paginas ?? "-"}</td><td>${c.total.toFixed(1)}h</td></tr>`;
+  const semanas = p.cronograma.map((s) => `<tr><td>Semana ${s.semana}</td><td>${s.capitulos.map((t) => `cap. ${t.num} (${t.horas.toFixed(1)}h)`).join(", ")}</td></tr>`).join("");
+  const avisos = (p.avisos || []).map((a) => `<li class="aviso">${esc(a)}</li>`).join("");
+  const excluidos = p.excluidos.length
+    ? `<details><summary>Capítulos fora do cronograma para ${p.senioridade} (${p.excluidos.length})</summary><ul>${p.excluidos.map((e) => `<li>${e.num}. ${esc(e.titulo)} — nível ${e.nivel}</li>`).join("")}</ul></details>`
+    : "";
+  return `
+    <div class="livro">
+      <h3>${esc(livro.titulo)}</h3>
+      <p><b>${p.total_horas.toFixed(1)}h</b> em <b>${p.semanas} semanas</b>, ${p.dias_por_semana} dias por semana · ${p.capitulos.length} capítulos · páginas ${origem}</p>
+      ${avisos ? `<ul>${avisos}</ul>` : ""}
+      <details open><summary>Capítulos para estudar</summary>
+        <table><tr><th>#</th><th>capítulo</th><th>nível</th><th>páginas</th><th>horas</th></tr>${p.capitulos.map(linhaCap).join("")}</table>
+      </details>
+      <details><summary>Cronograma por semana</summary><table>${semanas}</table></details>
+      ${excluidos}
+    </div>`;
+}
+
+async function gerarRoadmaps() {
+  const saida = document.getElementById("saida-roadmaps");
+  if (!livros.length) { saida.innerHTML = '<span class="erro">Envie os sumários no passo 1 primeiro.</span>'; return; }
+  const corpo = JSON.stringify({
     senioridade: document.getElementById("senioridade").value,
     disponibilidade_horas: Number(document.getElementById("disponibilidade_horas").value),
-  };
-  saida.innerHTML = "Gerando... (na primeira vez para este livro: pesquisa na web + classificação, 1 a 2 minutos)";
-
-  const r = await chamar(document.getElementById("btn-roadmap"), `/books/${bookId}/roadmaps`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(corpo),
   });
-  if (!r.ok) { mostrarErro(saida, r); return; }
 
-  document.getElementById("roadmap_id").value = r.corpo.id;
-  const p = r.corpo;
-  const origem = p.paginas?.origem === "pesquisa"
-    ? `estimadas: ${p.paginas.paginas_conteudo ?? p.paginas.paginas_totais} páginas de conteúdo, de ${p.paginas.paginas_totais} páginas totais pesquisadas (<a href="${p.paginas.url_fonte}" target="_blank">fonte</a>)<br><span class="aviso">${p.paginas.regra}</span>`
-    : "do próprio sumário";
-  const linhaCap = (c) => `<tr><td>${c.num}</td><td>${c.titulo}</td><td>${c.nivel}</td><td>${c.paginas ?? "-"}</td><td>${c.total.toFixed(2)}h</td></tr>`;
-  const linhaExcl = (e) => `<tr><td>${e.num}</td><td>${e.titulo}</td><td>${e.nivel}</td></tr>`;
-  const avisos = (p.avisos || []).map((a) => `<li class="aviso">${a}</li>`).join("");
-  saida.innerHTML = `
-    <p><b>roadmap_id:</b> ${p.id} | <b>total:</b> ${p.total_horas.toFixed(1)}h em ${p.semanas} semanas,
-    ${p.dias_por_semana} dias/semana</p>
-    <p><b>páginas:</b> ${origem}</p>
-    ${avisos ? `<ul>${avisos}</ul>` : ""}
-    <h3>Capítulos no cronograma (${p.capitulos.length})</h3>
-    <table><tr><th>#</th><th>título</th><th>nível</th><th>páginas</th><th>horas</th></tr>${p.capitulos.map(linhaCap).join("")}</table>
-    <h3>Excluídos pela senioridade (${p.excluidos.length})</h3>
-    <table><tr><th>#</th><th>título</th><th>nível</th></tr>${p.excluidos.map(linhaExcl).join("")}</table>
-  `;
+  saida.innerHTML = "";
+  await emLote(document.getElementById("btn-roadmap"), async () => {
+    for (const livro of livros) {
+      const bloco = document.createElement("div");
+      saida.appendChild(bloco);
+      if (!livro.capitulos.length) {
+        bloco.innerHTML = `<div class="livro"><h3>${esc(livro.titulo)}</h3><p class="aviso">Só a capa foi enviada: falta o sumário deste livro.</p></div>`;
+        continue;
+      }
+      bloco.innerHTML = `<div class="livro"><h3>${esc(livro.titulo)}</h3><p>Gerando...</p></div>`;
+      const r = await chamar(`/books/${livro.id}/roadmaps`, { method: "POST", headers: { "content-type": "application/json" }, body: corpo });
+      if (!r.ok) { bloco.innerHTML = `<div class="livro"><h3>${esc(livro.titulo)}</h3><p>${erroDe(r)}</p></div>`; livro.roadmap = null; continue; }
+      livro.roadmap = r.corpo;
+      bloco.innerHTML = blocoRoadmap(livro);
+    }
+  });
+  atualizarSeletorLivros();
+}
+
+function atualizarSeletorLivros() {
+  const seletor = document.getElementById("livro-explicar");
+  const comRoadmap = livros.filter((l) => l.roadmap);
+  seletor.innerHTML = comRoadmap.length
+    ? comRoadmap.map((l) => `<option value="${l.id}">${esc(l.titulo)}</option>`).join("")
+    : '<option value="">— gere os roadmaps no passo 2 —</option>';
+  preencherCapitulos();
+}
+
+function preencherCapitulos() {
+  const livro = livros.find((l) => String(l.id) === document.getElementById("livro-explicar").value);
+  const seletor = document.getElementById("capitulo-explicar");
+  if (!livro?.roadmap) { seletor.innerHTML = ""; return; }
+  const noCronograma = livro.roadmap.capitulos.map((c) => ({ num: c.num, rotulo: `${c.num}. ${c.titulo} — ${c.total.toFixed(1)}h` }));
+  const fora = livro.roadmap.excluidos.map((e) => ({ num: e.num, rotulo: `${e.num}. ${e.titulo} — fora do cronograma` }));
+  seletor.innerHTML = [...noCronograma, ...fora]
+    .sort((a, b) => a.num - b.num)
+    .map((c) => `<option value="${c.num}">${esc(c.rotulo)}</option>`)
+    .join("");
 }
 
 async function explicarCapitulo() {
-  const roadmapId = document.getElementById("roadmap_id").value;
-  const capitulo = document.getElementById("capitulo").value;
+  const livro = livros.find((l) => String(l.id) === document.getElementById("livro-explicar").value);
+  const capitulo = document.getElementById("capitulo-explicar").value;
   const saida = document.getElementById("saida-explicar");
-  saida.textContent = "Consultando...";
+  if (!livro?.roadmap || !capitulo) { saida.textContent = "Escolha o livro e o capítulo."; return; }
 
-  const r = await chamar(document.getElementById("btn-explicar"),
-    `/roadmaps/${roadmapId}/explicar?capitulo=${capitulo}`, { method: "GET" });
-  if (!r.ok) { mostrarErro(saida, r); return; }
-  saida.textContent = r.corpo.explicacao;
+  saida.textContent = "Consultando...";
+  await emLote(document.getElementById("btn-explicar"), async () => {
+    // O roadmap_id vem do roadmap gerado para este livro no passo 2: a explicação depende da senioridade e das horas dele.
+    const r = await chamar(`/roadmaps/${livro.roadmap.id}/explicar?capitulo=${capitulo}`, { method: "GET" });
+    saida.innerHTML = r.ok ? esc(r.corpo.explicacao) : erroDe(r);
+  });
 }
 </script>
 </body>
