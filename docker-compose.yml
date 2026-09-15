@@ -35,7 +35,9 @@ services:
     ports:
       - "8888:8080"
     volumes:
-      - ./searxng:/etc/searxng
+      # Só o arquivo, somente leitura. Montando a pasta, o contêiner a passa para o uid 977 e o
+      # usuário do host deixa de conseguir sobrescrever settings.yml — o que quebra checkout e merge.
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 
 volumes:
   pgdata:
