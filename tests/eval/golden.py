@@ -14,10 +14,10 @@ FIXTURES = RAIZ / "test_files"
 GOLDEN = {
     "richards": "sumario-9788575229682.pdf",
     "geron": "AMOSTRA_MaosAObraAprendizadoDeMaquinaComScikit-LearnKerasTensorFlow.pdf",
-    "nelson": "sumario-9788575229170.pdf",
-    "downey": "sumario-9788575229606.pdf",
-    "sweigart": "sumario-9788575229644.pdf",
     "huyen": "sumario-9788575229965.pdf",
+    "projetando": "AMOSTRA_ProjetandoSistemasDeMachineLearning-1.pdf",
+    "web_scraping": "sumario-9788575229231.pdf",
+    "engenheiro": "sumario-9788575229989.pdf",
 }
 DISPONIBILIDADE = 6.0
 N_VARIANCIA = int(os.environ.get("N_VARIANCIA", "10"))

@@ -393,23 +393,29 @@ CI normal roda com classificador, web e embedding mockados.
 
 ### Golden set
 
-`tests/fixtures/` — 10 a 15 sumários reais. Os três primeiros já cobrem os casos difíceis:
+`test_files/` — sumários reais, **fora do git** (PDFs de editora). Arquivo ausente → o teste pula
+("fixture ausente"). Golden set atual (2026-09-15), escolhido pelos casos difíceis que cobre:
 
 1. **Fundamentos da Arquitetura de Software, 2ª ed.** — rótulo `Capítulo N:`, tudo em
-   arábico inclusive prefácio, partes sem numeração própria, 27 capítulos, 454 páginas de
+   arábico inclusive prefácio, partes com página própria, 27 capítulos, 454 páginas de
    conteúdo. Variação extrema de tamanho: cap. 15 tem 52 páginas, cap. 23 tem 8 — fator
    6,5x que justifica `peso_relativo`.
 2. **Mãos à Obra: ML com Scikit-Learn, Keras & TensorFlow, 3ª ed.** — rótulo `N.`, prefácio
-   em romano, partes com página própria, apêndices por letra, sem pontilhado no texto
-   extraído, ficha CIP com 640 páginas, e o arquivo é uma amostra que inclui prefácio e
-   capítulo 1 completos.
-3. **JavaScript: O Guia Definitivo, 7ª ed.** — capa isolada, sem sumário.
+   em romano, partes com página própria, apêndices por letra, marca d'água "Amostra", ficha CIP
+   com 640 páginas, e o arquivo é uma amostra que inclui prefácio e capítulo 1 completos.
+3. **Engenharia de IA** — ficha CIP, 10 capítulos longos; livro da variância (N=10). A página 1
+   vira o fixture de capa isolada em PDF.
+4. **Projetando Sistemas de Machine Learning** — amostra de editora com rótulo `N .`.
+5. **Web Scraping com Python, 3ª ed.** — rótulo `Capítulo N ▪`, PDF que começa direto no
+   sumário, título só no cabeçalho corrido.
+6. **O Engenheiro de Software com Mentalidade de Produto** — `CAPÍTULO N:`, começa no sumário,
+   cabeçalho `6 | Título`. Existe também como `.txt` sem paginação montado pelo usuário, o que
+   permite comparar a estimativa por pesquisa com as páginas reais (238).
+
+Fora do golden set dos evals, mas usados na extração: um sumário com rótulo só com número e sem
+título em lugar nenhum (deve dar `422`), e a capa em JPEG de **JavaScript: O Guia Definitivo**.
 
 Baseline em `evals/baseline.json`. Toda mudança de prompt ou constante compara contra ele.
-
-**Estado (2026-09-15):** os arquivos do golden set e `evals/baseline.json` foram removidos a
-pedido do usuário. Os testes que dependem deles pulam ("fixture ausente"); `test_baseline`
-regrava a baseline na próxima rodada de eval com um golden set novo.
 
 ---
 

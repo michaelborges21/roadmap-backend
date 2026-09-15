@@ -6,13 +6,15 @@ from pathlib import Path
 import pytest
 
 from src import extracao
-from src.extracao import ExtracaoAmbigua, classificar_linhas, extrair, fechar_paginas
+from src.extracao import ExtracaoAmbigua, classificar_linhas, extrair, fechar_paginas, titulo_cip
 
 FIXTURES = Path(__file__).parent.parent / "test_files"
-RICHARDS = FIXTURES / "sumario-9788575229682.pdf"
-GERON = FIXTURES / "AMOSTRA_MaosAObraAprendizadoDeMaquinaComScikit-LearnKerasTensorFlow.pdf"
-CAPA_PDF = FIXTURES / "capa-9788575229170.pdf"  # página 1 do sumário da Nelson (pdfseparate)
-HARRISON = FIXTURES / "sumario-9788575228173.pdf"
+RICHARDS = FIXTURES / "sumario-9788575229682.pdf"  # "Capítulo N:", prefácio arábico, partes com página própria
+GERON = FIXTURES / "AMOSTRA_MaosAObraAprendizadoDeMaquinaComScikit-LearnKerasTensorFlow.pdf"  # "N.", marca d'água, CIP, amostra com corpo
+WEB_SCRAPING = FIXTURES / "sumario-9788575229231.pdf"  # "Capítulo N ▪", começa no sumário, título no cabeçalho corrido
+ENGENHEIRO = FIXTURES / "sumario-9788575229989.pdf"  # "CAPÍTULO N:", começa no sumário, cabeçalho "6 | Título"
+ALGORITMOS = FIXTURES / "sumario-9788575229293.pdf"  # rótulo só com número; o título não aparece em lugar nenhum
+CAPA_PDF = FIXTURES / "capa-9788575229965.pdf"  # página 1 do sumário de Engenharia de IA (pdfseparate)
 
 
 @cache
@@ -40,8 +42,16 @@ def test_richards_golden():
 
 
 def test_titulo_cip_com_barra_no_fim_da_linha():
-    # Sem isso o título caía no fallback de maior fonte da capa: "Al Sweigart".
-    assert extraido(FIXTURES / "sumario-9788575229644.pdf").titulo == "Automatize tarefas maçantes com Python"
+    # Linhas reais de uma ficha CIP: a barra fecha a linha. Sem a regra, o título caía no fallback de maior fonte.
+    linhas = [
+        "Dados Internacionais de Catalogação na Publicação (CIP)",
+        "(Câmara Brasileira do Livro, SP, Brasil)",
+        "Sweigart, Al",
+        "Automatize tarefas maçantes com Python :",
+        "programação prática para verdadeiros iniciantes /",
+        "Al Sweigart ; tradução Márcio Martins. -- 3. ed. --",
+    ]
+    assert titulo_cip(linhas) == "Automatize tarefas maçantes com Python"
 
 
 def test_amostra_com_corpo_le_so_sumario():
@@ -83,14 +93,33 @@ def test_capa_isolada_sem_inventar_paginas():
     ext = extraido(CAPA_PDF)
     assert ext.origem == "capa"
     assert ext.capitulos == [] and ext.paginas_conteudo is None
-    assert "Engenharia de Software para Cientistas de Dados" in ext.titulo
+    assert "Engenharia de IA" in ext.titulo
+
+
+def test_pdf_que_comeca_no_sumario_usa_cabecalho_como_titulo():
+    ws = extraido(WEB_SCRAPING)
+    assert (ws.titulo, len(ws.capitulos), ws.paginas_conteudo) == ("Web Scraping com Python – 3ª Edição", 20, 357)
+    assert ws.capitulos[0].titulo == "Como a internet funciona"  # "Capítulo 1 ▪ ...": sem o "▪" no título
+    eng = extraido(ENGENHEIRO)
+    assert (eng.titulo, len(eng.capitulos), eng.paginas_conteudo) == ("O Engenheiro de Software com Mentalidade de Produto", 9, 238)
+
+
+def test_rotulo_so_com_numero_e_arquivo_sem_titulo(monkeypatch: pytest.MonkeyPatch):
+    if not ALGORITMOS.exists():
+        pytest.skip(f"fixture ausente: {ALGORITMOS.name}")
+    with pytest.raises(ExtracaoAmbigua, match="sem título legível"):
+        extrair(ALGORITMOS.read_bytes())  # sem capa, ficha CIP nem cabeçalho: não inventa título
+
+    # Com um título qualquer, os capítulos de rótulo só com número ("1 Introdução a algoritmos 25") são lidos.
+    monkeypatch.setattr(extracao, "titulo_cabecalho", lambda _paginas: "Livro de algoritmos")
+    ext = extrair(ALGORITMOS.read_bytes())
+    assert (ext.capitulos[0].num, ext.capitulos[0].titulo, ext.capitulos[0].pag_inicio) == (1, "Introdução a algoritmos", 25)
+    assert [c.num for c in ext.capitulos] == list(range(1, len(ext.capitulos) + 1)) and len(ext.capitulos) >= 3
 
 
 def test_capitulo_sem_fronteira_final_422():
-    if not HARRISON.exists():
-        pytest.skip("fixture ausente")
     with pytest.raises(ExtracaoAmbigua, match="sem fronteira final"):
-        extrair(HARRISON.read_bytes())
+        fechar_paginas(classificar_linhas(["Capítulo 1: A 10", "Capítulo 2: B 20"]))
 
 
 def test_livro_completo_422(monkeypatch: pytest.MonkeyPatch):

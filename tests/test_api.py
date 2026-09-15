@@ -275,15 +275,15 @@ async def test_upload_texto_capa_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.asyncio
 async def test_upload_pdf_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
-    sumario, sem_fronteira = FIXTURES / "sumario-9788575229682.pdf", FIXTURES / "sumario-9788575228173.pdf"
-    if not (sumario.exists() and sem_fronteira.exists()):
+    sumario, sem_titulo = FIXTURES / "sumario-9788575229682.pdf", FIXTURES / "sumario-9788575229293.pdf"
+    if not (sumario.exists() and sem_titulo.exists()):
         pytest.skip("fixtures PDF ausentes em test_files/")
     if not await banco_no_ar():
         pytest.skip("Postgres fora do ar (docker compose up -d db)")
 
     # Bytes após o %%EOF mudam o hash sem afetar a leitura: não colide com livros reais do banco.
     marca = f"\n%{uuid.uuid4().hex}\n".encode()
-    pdf, pdf_ambiguo = sumario.read_bytes() + marca, sem_fronteira.read_bytes() + marca
+    pdf, pdf_ambiguo = sumario.read_bytes() + marca, sem_titulo.read_bytes() + marca
     hashes = [hashlib.sha256(pdf).hexdigest()]
 
     try:
@@ -293,7 +293,7 @@ async def test_upload_pdf_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
             assert criado.status_code == 201, criado.text
             assert (await envio("outro-nome.pdf", pdf)).status_code == 200
             ambiguo = await envio("sumario.pdf", pdf_ambiguo)
-            assert ambiguo.status_code == 422 and "sem fronteira final" in ambiguo.json()["detail"]
+            assert ambiguo.status_code == 422 and "sem título legível" in ambiguo.json()["detail"]
     finally:
         async with Session() as s:
             await s.execute(delete(Book).where(Book.hash_fonte.in_(hashes)))
