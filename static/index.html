@@ -96,6 +96,7 @@
       classificação dos capítulos (20 a 60 segundos); depois sai na hora.
     </p>
 
+    <div id="resumo-tempo" class="mt-5 grid gap-4"></div>
     <div id="saida-roadmaps" class="mt-5 grid gap-4"></div>
   </section>
 
@@ -168,8 +169,81 @@ async function emLote(botao, tarefa) {
 function limparLivros() {
   livros = [];
   document.getElementById("lista-livros").innerHTML = "";
+  document.getElementById("resumo-tempo").innerHTML = "";
   document.getElementById("saida-roadmaps").innerHTML = "";
   atualizarSeletorLivros();
+}
+
+// Cores do palete de dataviz (docs/dataviz), já conferidas com contrast() contra o fundo real
+// da página (#101728): categorical slot-1 dark (4.91:1), muted ink (4.97:1), 3 passos da rampa
+// sequencial azul (350/450/500 → 5.98/4.05/3.31:1). Nenhum valor "no olho".
+const COR_LIVRO_DESTAQUE = "#3987e5"; // livro de maior consumo (forma de ênfase: 1 cor + cinza)
+const COR_LIVRO_CONTEXTO = "#898781";
+const DEGRADE_CAPITULOS = ["#5598e7", "#3987e5", "#2a78d6", "#256abf"]; // mais horas = mais claro (âncora invertida em fundo escuro)
+
+function barraHorizontal(rotulo, subRotulo, horas, fracaoDoMaior, cor) {
+  const largura = Math.max(4, Math.round(fracaoDoMaior * 100));
+  return `
+    <div class="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-white/5"
+         title="${esc(rotulo)}${subRotulo ? " — " + esc(subRotulo) : ""}: ${horas.toFixed(1)}h">
+      <div class="w-40 shrink-0 text-right md:w-56">
+        <div class="truncate text-sm text-slate-200">${esc(rotulo)}</div>
+        ${subRotulo ? `<div class="truncate text-[11px] text-slate-500">${esc(subRotulo)}</div>` : ""}
+      </div>
+      <div class="h-[18px] min-w-0 flex-1">
+        <div class="h-full rounded-r-[4px]" style="width:${largura}%; background:${cor}"></div>
+      </div>
+      <div class="w-14 shrink-0 text-right font-mono text-xs text-slate-300">${horas.toFixed(1)}h</div>
+    </div>`;
+}
+
+function renderResumoTempo(comRoadmap) {
+  const alvo = document.getElementById("resumo-tempo");
+  if (!comRoadmap.length) { alvo.innerHTML = ""; return; }
+
+  // Livro com maior consumo de tempo total: forma de ênfase (1 destaque + cinza de contexto).
+  const porLivro = comRoadmap.map((l) => ({ titulo: l.titulo, horas: l.roadmap.total_horas })).sort((a, b) => b.horas - a.horas);
+  const maiorLivro = porLivro[0];
+  const blocoLivros = porLivro.length > 1
+    ? `<div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+        <div class="mb-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="h-4 w-4 text-indigo-300"></i>
+          <h3 class="text-sm font-semibold text-white">Livro com maior consumo de tempo</h3></div>
+        <p class="mb-3 text-xs text-slate-400"><span class="font-medium text-slate-100">${esc(maiorLivro.titulo)}</span>
+          concentra o maior total: ${maiorLivro.horas.toFixed(1)}h.</p>
+        <div class="space-y-1">${porLivro.map((b) =>
+          barraHorizontal(b.titulo, null, b.horas, b.horas / (maiorLivro.horas || 1), b === maiorLivro ? COR_LIVRO_DESTAQUE : COR_LIVRO_CONTEXTO)
+        ).join("")}</div>
+      </div>`
+    : `<div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+        <div class="mb-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="h-4 w-4 text-indigo-300"></i>
+          <h3 class="text-sm font-semibold text-white">Consumo de tempo</h3></div>
+        <p class="text-xs text-slate-400">Só um livro com roadmap até agora:
+          <span class="font-medium text-slate-100">${esc(maiorLivro.titulo)}</span>, ${maiorLivro.horas.toFixed(1)}h.
+          Gere o roadmap de outro livro para comparar.</p>
+      </div>`;
+
+  // Capítulos com maior demanda: ranking (forma sequencial, magnitude decrescente) entre os livros já gerados.
+  const capitulos = comRoadmap.flatMap((l) => l.roadmap.capitulos.map((c) => ({ titulo: c.titulo, livro: l.titulo, horas: c.total })));
+  let blocoCapitulos = "";
+  if (capitulos.length) {
+    const top = [...capitulos].sort((a, b) => b.horas - a.horas).slice(0, 8);
+    const maiorCap = top[0];
+    const nivel = (i) => DEGRADE_CAPITULOS[Math.min(3, Math.floor((i / top.length) * 4))];
+    blocoCapitulos = `
+      <div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+        <div class="mb-1 flex items-center gap-2"><i data-lucide="flame" class="h-4 w-4 text-indigo-300"></i>
+          <h3 class="text-sm font-semibold text-white">Capítulos com maior demanda de tempo</h3></div>
+        <p class="mb-3 text-xs text-slate-400">O maior é <span class="font-medium text-slate-100">${esc(maiorCap.titulo)}</span>
+          (${esc(maiorCap.livro)}), com ${maiorCap.horas.toFixed(1)}h.
+          ${capitulos.length > top.length ? ` Top ${top.length} de ${capitulos.length} capítulos.` : ""}</p>
+        <div class="space-y-1">${top.map((c, i) =>
+          barraHorizontal(c.titulo, c.livro, c.horas, c.horas / (maiorCap.horas || 1), nivel(i))
+        ).join("")}</div>
+      </div>`;
+  }
+
+  alvo.innerHTML = blocoLivros + blocoCapitulos;
+  icones();
 }
 
 function linhaLivroEnviado(nomeArquivo, conteudoHtml) {
@@ -319,6 +393,7 @@ async function gerarRoadmaps() {
       icones();
     }
   });
+  renderResumoTempo(livros.filter((l) => l.roadmap));
   atualizarSeletorLivros();
 }
 
