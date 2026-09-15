@@ -1,9 +1,10 @@
 import hashlib
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,13 @@ from src.rag import indexar, referencias, texto_chunk
 app = FastAPI(title="roadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 IMAGENS = {"image/jpeg", "image/png"}
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+async def interface_de_teste() -> FileResponse:
+    """Página auxiliar sem estilo para exercitar a API sem o Swagger. Não é parte do contrato."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 class BookCriado(Extraido):

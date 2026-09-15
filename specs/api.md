@@ -111,3 +111,11 @@ números vêm dos `fatores` persistidos no roadmap.
 | `200` | `{"explicacao": "..."}` |
 | `404` | Roadmap inexistente, ou capítulo fora do livro/roadmap. |
 | `502` / `503` | Falha do LLM. |
+
+---
+
+## `GET /` — interface de teste, fora do contrato
+
+Serve `static/index.html`, uma página sem estilo com formulários para os três endpoints acima.
+Existe só para exercitar a API sem o Swagger; não tem schema, não tem teste próprio e pode
+mudar ou sumir sem aviso de versão. `include_in_schema=False`: não aparece em `/docs`.
