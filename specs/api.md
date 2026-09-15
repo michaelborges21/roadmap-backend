@@ -23,6 +23,7 @@ Upload de sumário ou capa. `multipart/form-data`, campo `arquivo`.
 |---|---|
 | `application/pdf` | Extração determinística (sumário, ou capa se não houver sumário). |
 | `image/jpeg`, `image/png` | Capa lida por modelo de visão. |
+| `.txt`, `.md` (qualquer `content_type`; a extensão desempata) | Mesma extração determinística do PDF, sem página/fonte/marca d'água — exige a mesma convenção "Título ... página real do livro" em cada linha. |
 
 | Resposta | Quando |
 |---|---|

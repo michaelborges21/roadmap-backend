@@ -23,6 +23,7 @@ referência apontar para teste inexistente ou se um RF ficar sem teste.
 | RF-EXT-08 | Título vem da ficha CIP; sem ficha, da maior fonte da capa. | `tests/test_extracao.py::test_richards_golden`, `tests/test_extracao.py::test_titulo_cip_com_barra_no_fim_da_linha` |
 | RF-EXT-09 | PDF só de capa gera `Book` com `capitulos=[]` e sem páginas. | `tests/test_extracao.py::test_capa_isolada_sem_inventar_paginas` |
 | RF-EXT-10 | Capa em imagem é transcrita por modelo de visão (título, subtítulo, autor, edição — nunca páginas). | `tests/test_classificador.py::test_capa_em_imagem`, `tests/test_classificador.py::test_capa_sem_titulo_e_invalida`, `tests/eval/test_propriedades.py::test_capa_jpeg` |
+| RF-EXT-11 | `.txt`/`.md` seguem a mesma convenção "Título ... página real do livro" do sumário em PDF (sem fonte, sem marca d'água, sem checagem de "livro completo" por nº de páginas do arquivo). Detecção por `content_type` ou extensão. | `tests/test_extracao_texto.py`, `tests/test_api.py::test_upload_book_cache_e_erros` |
 
 ## Classificação (spec 2.6)
 

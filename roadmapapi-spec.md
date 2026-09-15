@@ -99,6 +99,16 @@ sumário, prefácio e o primeiro capítulo no mesmo PDF.
   (A regra antiga "janela > 15% do documento" foi descartada: arquivo só de sumário é
   quase todo sumário — Richards 87%, amostra Géron 32% — e ela rejeitava os fixtures.)
 
+**`.txt`/`.md` (2026-09-15, para verificação sem PDF/imagem):** mesma âncora, mesma classificação
+por rótulo, mesmo `fechar_paginas` — o número ao fim da linha continua sendo a página real do
+livro original, só que digitado à mão em vez de extraído da camada de texto do PDF. O que muda:
+sem fonte (sem marca d'água, sem "maior fonte" — título vem da 1ª linha antes da âncora ou da
+ficha CIP se o texto incluir uma) e sem contagem de páginas do arquivo (a checagem de "livro
+completo" por `livro_completo_fracao` não se aplica; só a heurística de parágrafo corrido
+continua valendo). Markdown: `#`/`##`, `-`/`*`/`+` de lista e `*`/`_`/`` ` `` são removidos antes
+de classificar — mas `N. Título` de lista numerada é preservado, porque já é o próprio formato
+de rótulo que o parser espera.
+
 ### 2.2 Limpar ruído
 
 Cabeçalhos, rodapés e marca d'água se repetem página a página e poluem a extração real:

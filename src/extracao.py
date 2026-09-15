@@ -3,6 +3,7 @@
 import io
 import re
 from collections import Counter
+from collections.abc import Callable
 from typing import Literal
 
 import pdfplumber
@@ -50,21 +51,44 @@ CIP_AUTOR = re.compile(r"[A-ZÀ-Ý][\wÀ-ÿ'-]+, [A-ZÀ-Ý][\wÀ-ÿ. ]*$")
 
 
 def extrair(dados: bytes) -> Extraido:
+    """PDF: sumário ou capa (spec 2.1–2.5)."""
     with pdfplumber.open(io.BytesIO(dados)) as pdf:
         paginas = [sem_marca_dagua(p) for p in pdf.pages]
         n_paginas = len(paginas)
         linhas_brutas = [[normalizar(l) for l in (p.extract_text() or "").splitlines()] for p in paginas]
         titulo_fonte = maior_fonte(paginas[0]) if paginas else None
     linhas = [l for pag in limpar_ruido([[l for l in pag if l] for pag in linhas_brutas]) for l in pag]
+    return _extrair_de_linhas(linhas, n_paginas_pdf=n_paginas, titulo_capa=lambda _antes: titulo_fonte)
 
+
+def extrair_texto(dados: bytes, markdown: bool) -> Extraido:
+    """.txt ou .md: mesma convenção de linha "Título ... página real do livro" do sumário em PDF,
+    sem camada visual (sem fonte, sem marca d'água) e sem contagem de páginas do arquivo — por
+    isso não dá para checar "parece o livro completo" aqui; só a heurística de parágrafo corrido."""
+    try:
+        texto = dados.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ExtracaoAmbigua("Arquivo de texto não está em UTF-8.") from exc
+    linhas = [normalizar(despojar_markdown(l) if markdown else l) for l in texto.splitlines()]
+    linhas = [l for l in linhas if l]
+
+    def titulo_capa(antes: list[str]) -> str | None:
+        return next(iter(antes), None)  # 1ª linha não vazia do arquivo: melhor esforço, como maior_fonte no PDF
+
+    return _extrair_de_linhas(linhas, n_paginas_pdf=None, titulo_capa=titulo_capa)
+
+
+def _extrair_de_linhas(
+    linhas: list[str], n_paginas_pdf: int | None, titulo_capa: Callable[[list[str]], str | None]
+) -> Extraido:
     loc = localizar_sumario(linhas)
     if loc is None:
         corridas = sum(1 for l in linhas if len(l) >= cfg.paragrafo_min_chars and not ENTRADA.match(l))
         if corridas >= cfg.paragrafos_min:
             raise ExtracaoAmbigua("Documento sem sumário e com texto corrido: parece corpo de livro, não sumário nem capa.")
-        titulo = titulo_cip(linhas) or titulo_fonte
+        titulo = titulo_cip(linhas) or titulo_capa(linhas)
         if not titulo:
-            raise ExtracaoAmbigua("Capa sem título legível na camada de texto do PDF.")
+            raise ExtracaoAmbigua("Capa sem título legível.")
         return Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
 
     inicio, janela = loc
@@ -73,16 +97,24 @@ def extrair(dados: bytes) -> Extraido:
     fisicas = next((int(m[1]) for l in antes if (m := CIP_PAGINAS.search(l))), None)
     if fisicas is not None and conteudo > fisicas:
         raise ExtracaoAmbigua(f"Sumário soma {conteudo} páginas de conteúdo, mas a ficha CIP diz {fisicas}.")
-    if n_paginas >= cfg.livro_completo_fracao * conteudo:
+    if n_paginas_pdf is not None and n_paginas_pdf >= cfg.livro_completo_fracao * conteudo:
         raise ExtracaoAmbigua(
-            f"PDF com {n_paginas} páginas para um livro de {conteudo}: parece o livro completo. Envie só o sumário."
+            f"PDF com {n_paginas_pdf} páginas para um livro de {conteudo}: parece o livro completo. Envie só o sumário."
         )
-    titulo = titulo_cip(antes) or titulo_fonte
+    titulo = titulo_cip(antes) or titulo_capa(antes)
     if not titulo:
-        raise ExtracaoAmbigua("Sumário sem título legível (sem ficha CIP e sem texto na capa).")
+        raise ExtracaoAmbigua("Sumário sem título legível (sem ficha CIP e sem título antes dele).")
     return Extraido(
         titulo=titulo, origem="sumario", paginas_conteudo=conteudo, paginas_fisicas=fisicas, capitulos=capitulos
     )
+
+
+def despojar_markdown(linha: str) -> str:
+    """Tira marcação que atrapalharia o casamento de CAPITULO/MARCADOR (mas preserva listas
+    numeradas: "1. Título" já É o formato de rótulo que o parser espera)."""
+    linha = re.sub(r"^\s*#{1,6}\s*", "", linha)
+    linha = re.sub(r"^\s*[-*+]\s+", "", linha)
+    return re.sub(r"[*_`]", "", linha)
 
 
 def sem_marca_dagua(pagina: Page) -> Page:

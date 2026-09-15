@@ -115,7 +115,8 @@ async def test_upload_book_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
     # Bytes após o %%EOF mudam o hash sem afetar a leitura: não colide com livros reais do banco.
     marca = f"\n%{uuid.uuid4().hex}\n".encode()
     pdf, pdf_ambiguo, imagem = sumario.read_bytes() + marca, sem_fronteira.read_bytes() + marca, b"\xff\xd8" + marca
-    hashes = [hashlib.sha256(d).hexdigest() for d in (pdf, imagem)]
+    txt = f"Guia de Testes {uuid.uuid4().hex}\n\nSumário\nCapítulo 1: Intro 1\nÍndice 10\n".encode()
+    hashes = [hashlib.sha256(d).hexdigest() for d in (pdf, imagem, txt)]
 
     try:
         async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://teste") as http:
@@ -132,7 +133,12 @@ async def test_upload_book_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
             assert capa.status_code == 201, capa.text
             assert (capa.json()["titulo"], capa.json()["origem"], capa.json()["falta_sumario"]) == ("JavaScript: O guia definitivo", "capa", True)
 
-            assert (await envio("notas.txt", b"texto", "text/plain")).status_code == 415
+            # .md com content-type genérico (comum em navegadores): extensão desempata.
+            texto = await envio("sumario.md", txt, "application/octet-stream")
+            assert texto.status_code == 201, texto.text
+            assert (len(texto.json()["capitulos"]), texto.json()["origem"]) == (1, "sumario")
+
+            assert (await envio("notas.csv", b"a,b,c", "text/csv")).status_code == 415
             ambiguo = await envio("sumario.pdf", pdf_ambiguo, "application/pdf")
             assert ambiguo.status_code == 422 and "sem fronteira final" in ambiguo.json()["detail"]
     finally:

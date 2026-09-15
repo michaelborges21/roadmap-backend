@@ -21,13 +21,16 @@ from src.classificador import (
 )
 from src.config import config
 from src.db import get_session
-from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair
+from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair, extrair_texto
 from src.models import Book, Roadmap
 from src.rag import indexar, referencias, texto_chunk
 
 app = FastAPI(title="roadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 IMAGENS = {"image/jpeg", "image/png"}
+# .md muitas vezes chega como text/plain ou application/octet-stream: navegador não conhece o tipo.
+# A extensão do arquivo desempata; sem extensão reconhecida, cai no content_type mesmo.
+TEXTOS = {"text/plain", "text/markdown", "text/x-markdown"}
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
 
@@ -69,8 +72,13 @@ async def llm_indisponivel(request: Request, exc: LLMIndisponivel) -> JSONRespon
 
 @app.post("/books", status_code=201)
 async def criar_book(arquivo: UploadFile, response: Response, session: SessionDep) -> BookCriado:
-    if arquivo.content_type not in IMAGENS | {"application/pdf"}:
-        raise HTTPException(415, "Envie um PDF (sumário ou capa) ou a imagem da capa (JPEG/PNG).")
+    nome = (arquivo.filename or "").lower()
+    markdown = arquivo.content_type in {"text/markdown", "text/x-markdown"} or nome.endswith((".md", ".markdown"))
+    e_texto = markdown or arquivo.content_type in TEXTOS or nome.endswith(".txt")
+    e_pdf = arquivo.content_type == "application/pdf" or nome.endswith(".pdf")
+    e_imagem = arquivo.content_type in IMAGENS or nome.endswith((".jpg", ".jpeg", ".png"))
+    if not (e_texto or e_pdf or e_imagem):
+        raise HTTPException(415, "Envie um PDF, uma imagem de capa (JPEG/PNG) ou um arquivo de texto (.txt/.md).")
 
     dados = await arquivo.read()
     hash_fonte = hashlib.sha256(dados).hexdigest()
@@ -78,10 +86,12 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
     if book:
         response.status_code = 200
     else:
-        if arquivo.content_type in IMAGENS:
+        if e_imagem:
             capa = await ler_capa(dados)
             titulo = f"{capa.titulo}: {capa.subtitulo}" if capa.subtitulo else capa.titulo
             ext = Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
+        elif e_texto:
+            ext = extrair_texto(dados, markdown)
         else:
             # pdfplumber é CPU-bound e síncrono; fora do event loop.
             ext = await run_in_threadpool(extrair, dados)
