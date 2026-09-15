@@ -54,6 +54,8 @@ class PesquisaWeb(BaseModel):
     janela_depois: int
     prefixo_documento: str
     prefixo_consulta: str
+    dominios_ignorados: list[str]
+    padroes_url_ignorados: list[str]
 
 
 class Config(BaseModel):

@@ -59,3 +59,10 @@ pesquisa:
   # Prompts de recuperação do embeddinggemma (documento × consulta).
   prefixo_documento: "title: none | text: "
   prefixo_consulta: "task: search result | query: "
+  # Nunca viram fonte (descartados já na busca): post de rede social cita vários livros e, nos testes
+  # reais de 2026-09-15, só trouxe contagens de outros livros (488, 65, 252, 262, 401 páginas).
+  dominios_ignorados: [instagram.com, linkedin.com, facebook.com, x.com, twitter.com, tiktok.com, youtube.com, reddit.com, threads.net, pinterest.com]
+  # URL com isto no caminho também nunca vira fonte: e-book conta páginas de tela, não do impresso
+  # (mesmo livro, 2026-09-15: Kindle 561, impresso 344). Filtro na URL e não no texto, porque a ficha
+  # da editora cita "ISBN ebook" ao lado das páginas do impresso.
+  padroes_url_ignorados: [ebook, kindle]

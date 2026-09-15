@@ -52,7 +52,14 @@ erraria; (3) extrair só o "conteúdo principal" perde justamente a fonte mais c
 6. **O Python só aceita o número** se o modelo disse que é o mesmo livro, se o número está escrito
    no trecho da URL citada e se é plausível (≥ nº de capítulos). Senão, `paginas_totais` fica nulo
    com o motivo.
-7. Contagens diferentes vistas nos trechos viram `outras_contagens` e, depois, **aviso no plano**.
+7. Contagens diferentes vistas nos trechos viram `outras_contagens` e, depois, **aviso no plano** —
+   só as de trechos que o modelo marcou como deste livro (`trechos_deste_livro`). Rede social é
+   descartada já na busca (`pesquisa.dominios_ignorados`): em 2026-09-15 os avisos de ruído (488 do
+   Instagram; 65, 252, 262 e 401 do LinkedIn) vinham todos de posts sobre outros livros. Página de
+   e-book/Kindle também (`pesquisa.padroes_url_ignorados`): numa rodada real o modelo escolheu 561
+   páginas da listagem Kindle, sabendo que era Kindle, e ao marcar só esses trechos como "deste livro"
+   escondeu as 344 do impresso. Por isso o filtro é no código, o prompt pede a edição impressa e
+   "deste livro" vale para qualquer edição — a diferença entre edições aparece como aviso.
 8. Resultado em `book.pesquisa`; na segunda vez para o mesmo livro, a base RAG é reaproveitada e a
    web não é consultada.
 

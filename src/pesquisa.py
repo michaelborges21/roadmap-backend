@@ -53,6 +53,7 @@ class PaginasEncontradas(BaseModel):
     mesmo_livro: bool
     paginas_totais: int | None = Field(default=None, gt=0)
     url_fonte: str | None = None
+    trechos_deste_livro: list[int] = []  # números dos trechos ([1], [2]...) que falam deste livro
     justificativa: str = Field(min_length=1)
 
 
@@ -71,10 +72,22 @@ título e o início do sumário de um livro, e trechos numerados, cada um com a 
 - mesmo_livro: true só se algum trecho descreve claramente ESTE livro. Cuidado com livros diferentes \
 de título parecido, outras edições e o original em outro idioma.
 - paginas_totais: o número de páginas deste livro exatamente como está escrito no trecho; null se \
-nenhum trecho sobre este livro traz o número.
+nenhum trecho sobre este livro traz o número. Use a edição impressa: contagem de e-book ou Kindle \
+não é o número de páginas do livro.
 - url_fonte: a URL do trecho de onde o número saiu.
+- trechos_deste_livro: os números dos trechos que falam deste livro, em qualquer edição; trechos \
+sobre outros livros ficam de fora.
 - justificativa: uma frase dizendo por que esse trecho é deste livro.
 Prefira a página da editora e de livrarias. Não calcule nem estime: só transcreva."""
+
+
+def fonte_ignorada(url: str) -> bool:
+    """Rede social mistura vários livros num post; página de e-book conta páginas de tela, não do
+    livro impresso. Nenhuma das duas é fonte de número de páginas."""
+    partes = urlparse(url)
+    host = partes.netloc.lower().split(":")[0]
+    rede_social = any(host == d or host.endswith(f".{d}") for d in cfg.dominios_ignorados)
+    return rede_social or any(p in partes.path.lower() for p in cfg.padroes_url_ignorados)
 
 
 def trechos_de_texto(url: str, texto: str) -> list[TrechoWeb]:
@@ -111,8 +124,16 @@ def validar(achado: PaginasEncontradas, fontes: list[TrechoWeb], n_capitulos: in
             fontes_consultadas=consultadas,
         )
 
+    # Divergência só conta em trecho sobre este livro: contagem de outro livro no mesmo resultado é ruído.
+    deste_livro = set(achado.trechos_deste_livro)
     outras = sorted(
-        {f"{v} páginas ({urlparse(f.url).netloc})" for f in fontes for m in CONTAGEM.finditer(f.texto) if (v := int(m[1] or m[2])) != n}
+        {
+            f"{v} páginas ({urlparse(f.url).netloc})"
+            for i, f in enumerate(fontes, 1)
+            if i in deste_livro
+            for m in CONTAGEM.finditer(f.texto)
+            if (v := int(m[1] or m[2])) != n
+        }
     )
     return Pesquisa(
         paginas_totais=n,
@@ -164,7 +185,7 @@ async def embeddar(textos: list[str], prefixo: str) -> list[list[float]]:
 async def pesquisar(session: AsyncSession, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
     """Não faz commit. A base RAG do livro é reaproveitada: a web só é consultada na primeira vez."""
     if not await session.scalar(select(Chunk.id).where(Chunk.book_id == book.id).limit(1)):
-        resultados = await buscar_web(book.titulo)
+        resultados = [r for r in await buscar_web(book.titulo) if not fonte_ignorada(r["url"])]
         trechos = [t for r in resultados for t in trechos_de_texto(r["url"], r["content"])]
         async with httpx.AsyncClient(timeout=cfg.timeout_s) as http:
             baixados = await asyncio.gather(*(baixar_trechos(http, r["url"]) for r in resultados[: cfg.paginas_baixadas]))

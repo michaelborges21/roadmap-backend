@@ -185,6 +185,7 @@ async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest
         return [
             {"url": EDITORA, "content": "Ano: 2026 Páginas: 344 Preço: R$ 139"},
             {"url": "https://loja.exemplo/outro", "content": "Outro livro de título parecido. Número de páginas: 448"},
+            {"url": "https://pt.linkedin.com/posts/lancamentos", "content": "Três lançamentos: livro de 401 páginas"},
         ]
 
     async def baixar_trechos_fake(http: object, url: str) -> list:
@@ -194,8 +195,12 @@ async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest
         return [E1 for _ in textos]
 
     async def chat_fake(modelo: object, papel: str, messages: list[dict[str, object]], schema: object) -> PaginasEncontradas:
-        prompts.append(str(messages[1]["content"]))
-        return PaginasEncontradas(mesmo_livro=True, paginas_totais=344, url_fonte=EDITORA, justificativa="Ficha técnica da editora.")
+        conteudo = str(messages[1]["content"])
+        prompts.append(conteudo)
+        todos = list(range(1, conteudo.count("\n[") + 1))  # o fake diz que todos os trechos são deste livro
+        return PaginasEncontradas(
+            mesmo_livro=True, paginas_totais=344, url_fonte=EDITORA, trechos_deste_livro=todos, justificativa="Ficha técnica da editora."
+        )
 
     monkeypatch.setattr(pesquisa, "buscar_web", buscar_web_fake)
     monkeypatch.setattr(pesquisa, "baixar_trechos", baixar_trechos_fake)

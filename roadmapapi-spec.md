@@ -325,8 +325,13 @@ reaproveitado, como a classificação.
    calcular e estimar.
 5. **Validação Python:** o número só vale se `mesmo_livro`, se está escrito no trecho da URL
    citada e se é plausível (≥ nº de capítulos). Senão, `paginas_totais` nulo com o motivo.
-6. Contagens diferentes vistas nos trechos (`outras_contagens`) viram aviso no plano. Caso real
-   medido: editora e livraria com 344; um post com 488; outro livro de título parecido com 448.
+6. Contagens diferentes vistas nos trechos que o modelo marcou como deste livro
+   (`trechos_deste_livro`, em qualquer edição) viram aviso no plano (`outras_contagens`); trecho de
+   outro livro não gera aviso. Descartados já na busca: domínios de rede social
+   (`pesquisa.dominios_ignorados` — nos testes reais só trouxeram contagens de outros livros: post
+   com 488; LinkedIn com 65, 252, 262 e 401) e URLs de e-book/Kindle (`pesquisa.padroes_url_ignorados`
+   — contam páginas de tela: o mesmo livro deu 561 no Kindle e 344 no impresso). O prompt pede a
+   edição impressa. Caso real medido: editora e livraria com 344; outro livro de título parecido com 448.
 
 **Uso:**
 
