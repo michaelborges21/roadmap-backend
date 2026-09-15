@@ -1,0 +1,191 @@
+{
+  "richards": {
+    "titulo": "Fundamentos da arquitetura de software",
+    "capitulos": 27,
+    "paginas_conteudo": 454,
+    "tipo_livro": "teorico",
+    "densidade": "densa",
+    "nivel_natural": "intermediario",
+    "linguagens": [],
+    "niveis": {
+      "iniciante": 3,
+      "intermediario": 23,
+      "avancado": 1
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 27,
+        "total_horas": 57.17,
+        "semanas": 10
+      },
+      "Pleno": {
+        "capitulos": 24,
+        "total_horas": 31.7,
+        "semanas": 6
+      },
+      "Senior": {
+        "capitulos": 1,
+        "total_horas": 1.93,
+        "semanas": 1
+      }
+    }
+  },
+  "geron": {
+    "titulo": "Mãos à obra: aprendizado de máquina com Scikit-Learn, Keras & TensorFlow",
+    "capitulos": 19,
+    "paginas_conteudo": 592,
+    "tipo_livro": "hibrido",
+    "densidade": "densa",
+    "nivel_natural": "intermediario",
+    "linguagens": [
+      "Python"
+    ],
+    "niveis": {
+      "iniciante": 4,
+      "intermediario": 6,
+      "avancado": 9
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 19,
+        "total_horas": 103.59,
+        "semanas": 18
+      },
+      "Pleno": {
+        "capitulos": 15,
+        "total_horas": 52.32,
+        "semanas": 9
+      },
+      "Senior": {
+        "capitulos": 9,
+        "total_horas": 26.06,
+        "semanas": 5
+      }
+    }
+  },
+  "huyen": {
+    "titulo": "Engenharia de IA",
+    "capitulos": 10,
+    "paginas_conteudo": 452,
+    "tipo_livro": "hibrido",
+    "densidade": "media",
+    "nivel_natural": "intermediario",
+    "linguagens": [],
+    "niveis": {
+      "iniciante": 2,
+      "intermediario": 6,
+      "avancado": 2
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 10,
+        "total_horas": 64.81,
+        "semanas": 11
+      },
+      "Pleno": {
+        "capitulos": 8,
+        "total_horas": 33.05,
+        "semanas": 6
+      },
+      "Senior": {
+        "capitulos": 2,
+        "total_horas": 7.14,
+        "semanas": 2
+      }
+    }
+  },
+  "projetando": {
+    "titulo": "Projetando Sistemas de Machine Learning",
+    "capitulos": 11,
+    "paginas_conteudo": 364,
+    "tipo_livro": "teorico",
+    "densidade": "densa",
+    "nivel_natural": "intermediario",
+    "linguagens": [],
+    "niveis": {
+      "iniciante": 3,
+      "intermediario": 7,
+      "avancado": 1
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 11,
+        "total_horas": 38.09,
+        "semanas": 7
+      },
+      "Pleno": {
+        "capitulos": 8,
+        "total_horas": 18.68,
+        "semanas": 4
+      },
+      "Senior": {
+        "capitulos": 1,
+        "total_horas": 1.67,
+        "semanas": 1
+      }
+    }
+  },
+  "web_scraping": {
+    "titulo": "Web Scraping com Python – 3ª Edição",
+    "capitulos": 20,
+    "paginas_conteudo": 357,
+    "tipo_livro": "pratico",
+    "densidade": "media",
+    "nivel_natural": "iniciante",
+    "linguagens": [
+      "Python",
+      "JavaScript"
+    ],
+    "niveis": {
+      "iniciante": 4,
+      "intermediario": 13,
+      "avancado": 3
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 20,
+        "total_horas": 48.72,
+        "semanas": 9
+      },
+      "Pleno": {
+        "capitulos": 16,
+        "total_horas": 32.67,
+        "semanas": 6
+      },
+      "Senior": {
+        "capitulos": 3,
+        "total_horas": 6.16,
+        "semanas": 2
+      }
+    }
+  },
+  "engenheiro": {
+    "titulo": "O Engenheiro de Software com Mentalidade de Produto",
+    "capitulos": 9,
+    "paginas_conteudo": 238,
+    "tipo_livro": "teorico",
+    "densidade": "media",
+    "nivel_natural": "intermediario",
+    "linguagens": [],
+    "niveis": {
+      "intermediario": 9
+    },
+    "senioridades": {
+      "Junior": {
+        "capitulos": 9,
+        "total_horas": 18.87,
+        "semanas": 4
+      },
+      "Pleno": {
+        "capitulos": 9,
+        "total_horas": 11.16,
+        "semanas": 2
+      },
+      "Senior": {
+        "capitulos": 0,
+        "total_horas": 0.0,
+        "semanas": 0
+      }
+    }
+  }
+}
