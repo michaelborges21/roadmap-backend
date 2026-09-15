@@ -9,7 +9,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.calculo import REGRA_DISTRIBUICAO, OrigemPaginas, Plano, Senioridade, distribuir_paginas, planejar
+from src.calculo import (
+    REGRA_DISTRIBUICAO,
+    OrigemPaginas,
+    Plano,
+    Senioridade,
+    distribuir_paginas,
+    paginas_de_conteudo,
+    planejar,
+)
 from src.classificador import (
     Classificacao,
     Explicacao,
@@ -136,9 +144,14 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
             raise HTTPException(
                 422, f"Sumário sem números de página e nenhuma fonte confiável com o total de páginas. {motivo} Envie um sumário paginado."
             )
-        capitulos = distribuir_paginas(capitulos, pesquisa.paginas_totais)
+        conteudo = paginas_de_conteudo(pesquisa.paginas_totais)
+        capitulos = distribuir_paginas(capitulos, conteudo)
         origem = OrigemPaginas(
-            origem="pesquisa", paginas_totais=pesquisa.paginas_totais, url_fonte=pesquisa.url_fonte, regra=REGRA_DISTRIBUICAO
+            origem="pesquisa",
+            paginas_totais=pesquisa.paginas_totais,
+            paginas_conteudo=conteudo,
+            url_fonte=pesquisa.url_fonte,
+            regra=REGRA_DISTRIBUICAO,
         )
     else:
         origem = OrigemPaginas(origem="sumario", paginas_totais=book.paginas_conteudo)

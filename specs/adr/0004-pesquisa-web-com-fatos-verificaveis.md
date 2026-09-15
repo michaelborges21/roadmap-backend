@@ -86,8 +86,10 @@ Uma fonte que exija chave, cadastro ou custo passa a ser checkpoint.
 - **Dependência da web.** Sites mudam layout e bloqueiam robôs; o eval
   `tests/eval/test_pesquisa_web.py` pode quebrar sem regressão de código.
 - **Estimativa, não medida.** O total pesquisado inclui páginas pré e pós-textuais (prefácio,
-  apêndice, índice), então as horas tendem a sair acima do real; a repartição por subtópicos é
-  uma aproximação. Calibrar com `evals/estudo.csv`.
+  apêndice, índice). Medido em 2026-09-15 nos 6 livros com sumário paginado: o conteúdo é 90–95%
+  do total achado na web (média 92%). Desde então só essa fração é repartida
+  (`calculo.fracao_conteudo_pesquisa`); no livro medido nos dois formatos, a estimativa passou de
+  +11% para +2%. A repartição por subtópicos continua aproximação. Calibrar com `evals/estudo.csv`.
 - **Primeira geração mais lenta:** busca + downloads + embeddings + modelo, 1 a 2 minutos.
 - **Mais um serviço** no `docker-compose.yml` (SearXNG).
 - A escolha da fonte ainda é julgamento do modelo: se ele disser que um trecho de outro livro é

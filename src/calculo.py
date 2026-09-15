@@ -13,13 +13,14 @@ Senioridade = Literal["Junior", "Pleno", "Senior"]
 NIVEIS: list[Nivel] = ["iniciante", "intermediario", "avancado"]
 SENIORIDADES: list[Senioridade] = ["Junior", "Pleno", "Senior"]
 EPS = 1e-9
-REGRA_DISTRIBUICAO = (
-    "Sumário sem paginação: o total de páginas pesquisado foi repartido entre os capítulos na proporção "
-    "de 1 + nº de subtópicos. O total inclui páginas pré e pós-textuais, então as horas tendem a sair "
-    "um pouco acima do real."
-)
 
 calc = config.calculo
+
+REGRA_DISTRIBUICAO = (
+    f"Sumário sem paginação: {calc.fracao_conteudo_pesquisa:.0%} do total de páginas pesquisado "
+    "(o resto é prefácio, apêndice e índice) foram repartidos entre os capítulos na proporção de "
+    "1 + nº de subtópicos. As páginas por capítulo são estimativa."
+)
 
 
 class Fatores(BaseModel):
@@ -60,7 +61,8 @@ class Semana(BaseModel):
 
 class OrigemPaginas(BaseModel):
     origem: Literal["sumario", "pesquisa"]
-    paginas_totais: int | None = None
+    paginas_totais: int | None = None  # "pesquisa": total do livro achado na web
+    paginas_conteudo: int | None = None  # "pesquisa": parte do total repartida entre os capítulos
     url_fonte: str | None = None
     regra: str | None = None
 
@@ -78,14 +80,19 @@ class Plano(BaseModel):
     avisos: list[str] = []
 
 
-def distribuir_paginas(capitulos: list[Capitulo], paginas_totais: int) -> list[Capitulo]:
-    """Sumário sem paginação (spec 2.9): reparte o total pesquisado na proporção de 1 + nº de subtópicos."""
+def paginas_de_conteudo(paginas_totais: int) -> int:
+    """O total achado na web inclui prefácio, apêndice e índice; conteúdo = fração calibrada dele."""
+    return round(paginas_totais * calc.fracao_conteudo_pesquisa)
+
+
+def distribuir_paginas(capitulos: list[Capitulo], paginas: int) -> list[Capitulo]:
+    """Sumário sem paginação (spec 2.9): reparte as páginas de conteúdo na proporção de 1 + nº de subtópicos."""
     pesos = [1 + len(c.subtopicos) for c in capitulos]
-    brutos = [paginas_totais * p / sum(pesos) for p in pesos]
+    brutos = [paginas * p / sum(pesos) for p in pesos]
     inteiros = [int(b) for b in brutos]
     # Maior resto: a soma dos capítulos fecha exatamente no total.
     maiores_restos = sorted(range(len(brutos)), key=lambda i: brutos[i] - inteiros[i], reverse=True)
-    for i in maiores_restos[: paginas_totais - sum(inteiros)]:
+    for i in maiores_restos[: paginas - sum(inteiros)]:
         inteiros[i] += 1
     return [c.model_copy(update={"paginas": max(1, n)}) for c, n in zip(capitulos, inteiros)]
 

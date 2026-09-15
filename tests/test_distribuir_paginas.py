@@ -1,6 +1,9 @@
-"""Distribuição do total pesquisado entre capítulos de um sumário sem paginação (spec 2.9)."""
+"""Páginas de um sumário sem paginação a partir do total pesquisado (spec 2.9)."""
 
-from src.calculo import distribuir_paginas
+import pytest
+
+from src import calculo
+from src.calculo import distribuir_paginas, paginas_de_conteudo
 from src.extracao import Capitulo
 
 
@@ -31,3 +34,11 @@ def test_nao_altera_os_capitulos_originais():
     originais = caps(1, 1)
     distribuir_paginas(originais, 10)
     assert [c.paginas for c in originais] == [None, None]
+
+
+def test_conteudo_e_a_fracao_calibrada_do_total_pesquisado(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(calculo.calc, "fracao_conteudo_pesquisa", 0.92)
+    assert paginas_de_conteudo(496) == 456  # 496 × 0,92 = 456,3
+    assert paginas_de_conteudo(264) == 243  # 242,9 arredonda para cima
+    monkeypatch.setattr(calculo.calc, "fracao_conteudo_pesquisa", 1.0)
+    assert paginas_de_conteudo(264) == 264

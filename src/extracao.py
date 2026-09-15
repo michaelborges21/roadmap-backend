@@ -71,6 +71,13 @@ def extrair(dados: bytes) -> Extraido:
     return _extrair_de_linhas(linhas, n_paginas_pdf=n_paginas, titulo_capa=lambda _antes: titulo_fonte)
 
 
+# Marcação que o usuário escreve no arquivo que ele mesmo monta: "Titulo: Nome", "Título do livro: Nome",
+# "Nome do livro: Nome". "Título original: ..." (o nome em inglês, comum em ficha copiada) não conta.
+MARCACAO_TITULO = re.compile(
+    r"^(?:t[íi]tulo(?:\s+do\s+livro)?|nome\s+do\s+livro)(?!\s+original)\s*[:\-–—]\s*(.+)$", re.I
+)
+
+
 def extrair_texto(dados: bytes, markdown: bool) -> Extraido:
     """.txt ou .md: mesma convenção de linha "Título ... página real do livro" do sumário em PDF,
     sem camada visual (sem fonte, sem marca d'água) e sem contagem de páginas do arquivo — por
@@ -83,7 +90,10 @@ def extrair_texto(dados: bytes, markdown: bool) -> Extraido:
     linhas = [l for l in linhas if l]
 
     def titulo_capa(antes: list[str]) -> str | None:
-        return next(iter(antes), None)  # 1ª linha não vazia do arquivo: melhor esforço, como maior_fonte no PDF
+        # Arquivo montado pelo usuário, sem ordem garantida: a marcação vale em qualquer linha antes do
+        # sumário; sem ela, a 1ª linha não vazia (melhor esforço, como maior_fonte no PDF).
+        marcado = next((m[1].strip() for l in antes if (m := MARCACAO_TITULO.match(l))), None)
+        return marcado or next(iter(antes), None)
 
     return _extrair_de_linhas(linhas, n_paginas_pdf=None, titulo_capa=titulo_capa)
 

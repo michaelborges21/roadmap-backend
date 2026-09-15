@@ -99,8 +99,9 @@ Exemplo ilustrativo do formato (valores não vêm de uma execução real):
   "paginas": {
     "origem": "pesquisa",
     "paginas_totais": 344,
+    "paginas_conteudo": 316,
     "url_fonte": "https://editora.exemplo/livro",
-    "regra": "Sumário sem paginação: o total de páginas pesquisado foi repartido entre os capítulos..."
+    "regra": "Sumário sem paginação: 92% do total de páginas pesquisado (o resto é prefácio, apêndice e índice)..."
   },
   "avisos": ["Outras contagens de páginas vistas na web (podem ser de outro livro ou edição): 488 páginas (rede.exemplo)"]
 }

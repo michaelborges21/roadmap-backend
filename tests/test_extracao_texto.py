@@ -109,3 +109,19 @@ def test_txt_sanidade_cip_ainda_vale_se_o_texto_incluir_a_ficha():
     )
     with pytest.raises(ExtracaoAmbigua, match="ficha CIP"):
         extrair_texto(texto.encode(), markdown=False)
+
+
+@pytest.mark.parametrize("marcacao", ["Titulo: ", "Título: ", "TÍTULO - ", "Título do livro: ", "Nome do livro: ", "**Título:** "])
+def test_marcacao_de_titulo_escrita_pelo_usuario(marcacao: str):
+    texto = f"{marcacao}LLMs – As Partes Difíceis \n\nDescrição do livro\nUm texto qualquer.\n\n" + SUMARIO_SEM_PAGINAS.split("\n", 1)[1]
+    assert extrair_texto(texto.encode(), markdown=marcacao.startswith("**")).titulo == "LLMs – As Partes Difíceis"
+
+
+def test_marcacao_de_titulo_fora_da_primeira_linha():
+    texto = "Descrição do livro\nResenha curta.\nTitulo: Meu Livro de Testes\n\n" + SUMARIO_SEM_PAGINAS.split("\n", 1)[1]
+    assert extrair_texto(texto.encode(), markdown=False).titulo == "Meu Livro de Testes"
+
+
+def test_titulo_original_da_ficha_nao_e_marcacao():
+    texto = "Meu Livro\nTítulo original: My Book\n\n" + SUMARIO_SEM_PAGINAS.split("\n", 1)[1]
+    assert extrair_texto(texto.encode(), markdown=False).titulo == "Meu Livro"

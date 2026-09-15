@@ -152,8 +152,11 @@ async def test_roadmap_de_sumario_sem_paginas(monkeypatch: pytest.MonkeyPatch):
             r = await http.post(f"/books/{com_fonte.id}/roadmaps", json={**PEDIDO, "senioridade": "Junior"})
             assert r.status_code == 201, r.text
             p = r.json()
-            assert (p["paginas"]["origem"], p["paginas"]["paginas_totais"], p["paginas"]["url_fonte"]) == ("pesquisa", 120, EDITORA)
-            assert [c["paginas"] for c in p["capitulos"]] == [27, 40, 53]  # 1 + subtópicos: pesos 2, 3, 4
+            conteudo = round(120 * pesquisa.config.calculo.fracao_conteudo_pesquisa)  # total da web → conteúdo
+            origem = p["paginas"]
+            assert (origem["origem"], origem["paginas_totais"], origem["paginas_conteudo"], origem["url_fonte"]) == ("pesquisa", 120, conteudo, EDITORA)
+            paginas = [c["paginas"] for c in p["capitulos"]]
+            assert sum(paginas) == conteudo and paginas[0] < paginas[1] < paginas[2]  # 1 + subtópicos: pesos 2, 3, 4
             assert any("488 páginas" in a for a in p["avisos"])  # divergência na web não some
 
             r = await http.post(f"/books/{sem_fonte.id}/roadmaps", json=PEDIDO)

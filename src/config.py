@@ -32,6 +32,7 @@ class Calculo(BaseModel):
     fator_baixo_nivel: float
     baixo_nivel: set[str]
     horas_por_sessao: float
+    fracao_conteudo_pesquisa: float
 
 
 class LLM(BaseModel):
