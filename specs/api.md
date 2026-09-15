@@ -137,3 +137,8 @@ números vêm dos `fatores` persistidos no roadmap.
 Serve `static/index.html`, uma página sem estilo com formulários para os três endpoints acima.
 Existe só para exercitar a API sem o Swagger; não tem schema, não tem teste próprio e pode
 mudar ou sumir sem aviso de versão. `include_in_schema=False`: não aparece em `/docs`.
+
+O passo 1 aceita até 5 arquivos por vez, enviados um de cada vez ao `POST /books` — cada um vira
+um `Book` independente, com seu `id` e seu roadmap; não existe (nem é objetivo) roadmap
+combinando vários livros, o que exigiria tabela de junção (princípio 4 da spec, "sem tabela de
+junção"). Puramente conveniência da página de teste, sem endpoint novo nem mudança de schema.

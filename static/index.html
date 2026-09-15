@@ -25,11 +25,12 @@
 
 <section>
   <h2>1. Enviar sumário ou capa</h2>
-  <label>Arquivo (PDF, JPEG, PNG, TXT ou MD)
-    <input type="file" id="arquivo" accept=".pdf,.jpg,.jpeg,.png,.txt,.md,.markdown">
+  <label>Arquivos (PDF, JPEG, PNG, TXT ou MD — até 5, cada um vira um livro separado)
+    <input type="file" id="arquivo" accept=".pdf,.jpg,.jpeg,.png,.txt,.md,.markdown" multiple>
   </label>
-  <button id="btn-upload" onclick="enviarBook()">Enviar</button>
-  <pre id="saida-upload"></pre>
+  <button id="btn-upload" onclick="enviarBooks()">Enviar</button>
+  <p class="aviso">Enviados um de cada vez. Capa em imagem chama o modelo de visão; os demais são instantâneos.</p>
+  <table id="tabela-upload" hidden><tr><th>arquivo</th><th>resultado</th></tr></table>
 </section>
 
 <section>
@@ -82,19 +83,40 @@ function mostrarErro(el, resultado) {
   el.innerHTML = `<span class="erro">${resultado.status || "erro"}: ${JSON.stringify(resultado.corpo?.detail ?? resultado.corpo)}</span>`;
 }
 
-async function enviarBook() {
-  const arquivo = document.getElementById("arquivo").files[0];
-  const saida = document.getElementById("saida-upload");
-  if (!arquivo) { saida.innerHTML = '<span class="erro">Escolha um arquivo primeiro.</span>'; return; }
+const MAX_ARQUIVOS = 5;
 
-  const dados = new FormData();
-  dados.append("arquivo", arquivo);
-  saida.textContent = "Enviando...";
-  const r = await chamar(document.getElementById("btn-upload"), "/books", { method: "POST", body: dados });
-  if (!r.ok) { mostrarErro(saida, r); return; }
+async function enviarBooks() {
+  const arquivos = [...document.getElementById("arquivo").files].slice(0, MAX_ARQUIVOS);
+  const tabela = document.getElementById("tabela-upload");
+  if (!arquivos.length) { alert("Escolha ao menos um arquivo."); return; }
+  if (document.getElementById("arquivo").files.length > MAX_ARQUIVOS) {
+    alert(`Você escolheu ${document.getElementById("arquivo").files.length} arquivos; só os ${MAX_ARQUIVOS} primeiros serão enviados.`);
+  }
 
-  document.getElementById("book_id").value = r.corpo.id;
-  saida.textContent = JSON.stringify(r.corpo, null, 2);
+  tabela.hidden = false;
+  tabela.querySelectorAll("tr:not(:first-child)").forEach((tr) => tr.remove());
+  let ultimoId = null;
+
+  const botao = document.getElementById("btn-upload");
+  botao.disabled = true;
+  for (const arquivo of arquivos) {
+    const linha = tabela.insertRow();
+    linha.innerHTML = `<td>${arquivo.name}</td><td>Enviando...</td>`;
+
+    const dados = new FormData();
+    dados.append("arquivo", arquivo);
+    // Sequencial (não Promise.all): capa em imagem chama o modelo de visão, e disparar vários ao
+    // mesmo tempo sobrecarrega a mesma GPU sem ganhar velocidade.
+    const r = await chamar(botao, "/books", { method: "POST", body: dados });
+    if (!r.ok) {
+      linha.cells[1].innerHTML = `<span class="erro">${r.status}: ${JSON.stringify(r.corpo?.detail ?? r.corpo)}</span>`;
+      continue;
+    }
+    ultimoId = r.corpo.id;
+    linha.cells[1].innerHTML = `<b>id ${r.corpo.id}</b> (${r.status === 200 ? "já existia" : "novo"}) — ${r.corpo.titulo} — ${r.corpo.capitulos.length} capítulos`;
+  }
+  botao.disabled = false;
+  if (ultimoId !== null) document.getElementById("book_id").value = ultimoId;
 }
 
 async function gerarRoadmap() {
