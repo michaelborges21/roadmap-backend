@@ -40,13 +40,17 @@ Entrada = dict[str, str | int | None]
 ANCORA = re.compile(r"^(Sum[áa]rio|Conte[úu]do|[ÍI]ndice|Table of Contents)$", re.I)
 ROMANO = r"[ivxlcdm]+"
 ENTRADA = re.compile(rf"^(.+?)\s+(\d+|{ROMANO})$")
-# Novatec usa "Capítulo N:", "Capítulo N ■" e "Capítulo N" sem separador; Alta Books usa "N." ou "N .".
+# Novatec usa "Capítulo N:", "Capítulo N ■", "Capítulo N ▪" e "Capítulo N" sem separador; Alta Books usa "N." ou "N .".
 CAPITULO = [
-    re.compile(r"^Cap[ií]tulo\s+(\d+)\s*[:.■]?\s*(.+?)\s+(\d+)$", re.I),
+    re.compile(r"^Cap[ií]tulo\s+(\d+)\s*[:.■▪]?\s*(.+?)\s+(\d+)$", re.I),
     re.compile(r"^(\d+)\s?\.\s+(.+?)\s+(\d+)$"),
 ]
+# Rótulo só com o número ("1 Introdução a algoritmos 25"). Usado só se nenhum rótulo acima casa no
+# sumário inteiro: num livro com rótulo normal, "3 dicas de estudo 12" continua subtópico. Um falso
+# positivo quebra a numeração consecutiva e vira 422.
+CAPITULO_NUMERO_SOLTO = re.compile(r"^(\d{1,2})\s+(?![\d.])(.+?)\s+(\d+)$")
 # Mesmos rótulos, sem página no fim (sumário sem paginação: e-book, página de loja, texto digitado).
-CAPITULO_SEM_PAGINA = re.compile(r"^(?:Cap[ií]tulo\s+(\d+)\s*[:.■]?\s*|(\d+)\s?\.\s+)(.+)$", re.I)
+CAPITULO_SEM_PAGINA = re.compile(r"^(?:Cap[ií]tulo\s+(\d+)\s*[:.■▪]?\s*|(\d+)\s?\.\s+)(.+)$", re.I)
 MARCADOR = re.compile(r"^(Parte\b|Pref[áa]cio\b|Apresenta[çc][ãa]o\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)", re.I)
 FIM_DO_SUMARIO = re.compile(r"^[ÍI]ndice", re.I)
 CIP_PAGINAS = re.compile(r"\b(\d+)\s*p\.")
@@ -58,9 +62,12 @@ def extrair(dados: bytes) -> Extraido:
     with pdfplumber.open(io.BytesIO(dados)) as pdf:
         paginas = [sem_marca_dagua(p) for p in pdf.pages]
         n_paginas = len(paginas)
-        linhas_brutas = [[normalizar(l) for l in (p.extract_text() or "").splitlines()] for p in paginas]
+        linhas_brutas = [[l for l in (normalizar(x) for x in (p.extract_text() or "").splitlines()) if l] for p in paginas]
         titulo_fonte = maior_fonte(paginas[0]) if paginas else None
-    linhas = [l for pag in limpar_ruido([[l for l in pag if l] for pag in linhas_brutas]) for l in pag]
+    if titulo_fonte and ANCORA.match(titulo_fonte):
+        # PDF que começa direto no sumário: a maior fonte da página 1 é "Sumário", não o título.
+        titulo_fonte = titulo_cabecalho(linhas_brutas)
+    linhas = [l for pag in limpar_ruido(linhas_brutas) for l in pag]
     return _extrair_de_linhas(linhas, n_paginas_pdf=n_paginas, titulo_capa=lambda _antes: titulo_fonte)
 
 
@@ -98,7 +105,10 @@ def _extrair_de_linhas(
     # Paginado só se alguma linha termina em página arábica: título acabado em "mil" ou "civil" casa
     # o padrão romano de ENTRADA e não pode, sozinho, desviar um sumário sem paginação.
     if any(ENTRADA.match(l)[2].isdigit() for l in janela):  # type: ignore[index]
-        capitulos, conteudo = fechar_paginas(classificar_linhas(janela))
+        entradas = classificar_linhas(janela)
+        if not any(e["tipo"] == "capitulo" for e in entradas):
+            entradas = classificar_linhas(janela, [CAPITULO_NUMERO_SOLTO])
+        capitulos, conteudo = fechar_paginas(entradas)
     else:
         # Nenhuma linha termina em página: sumário sem paginação. As páginas vêm da pesquisa de fatos (spec 2.9).
         capitulos, conteudo = sumario_sem_paginas(linhas[inicio + 1 :]), None
@@ -112,7 +122,10 @@ def _extrair_de_linhas(
         )
     titulo = titulo_cip(antes) or titulo_capa(antes)
     if not titulo:
-        raise ExtracaoAmbigua("Sumário sem título legível (sem ficha CIP e sem título antes dele).")
+        raise ExtracaoAmbigua(
+            "Sumário sem título legível: o arquivo não tem capa, ficha CIP nem cabeçalho com o nome do livro. "
+            "Envie a capa junto ou um .txt que comece pelo título."
+        )
     return Extraido(
         titulo=titulo, origem="sumario", paginas_conteudo=conteudo, paginas_fisicas=fisicas, capitulos=capitulos
     )
@@ -143,6 +156,19 @@ def maior_fonte(pagina: Page) -> str | None:
     tamanho = lambda ln: round(max(c["size"] for c in ln["chars"]))  # noqa: E731
     maior = max(map(tamanho, linhas))
     return normalizar(" ".join(ln["text"] for ln in linhas if tamanho(ln) == maior)) or None
+
+
+def titulo_cabecalho(paginas: list[list[str]]) -> str | None:
+    """Cabeçalho corrido ("6 | Nome do Livro", "4 Nome do Livro"): texto do topo que se repete em 2+ páginas."""
+    candidatos = Counter(
+        texto
+        for pag in paginas[1:]  # a página 1 abre com a âncora do sumário
+        if pag
+        and (texto := re.sub(r"^\d+\s*\|?\s*|\s*\|?\s*\d+$", "", pag[0]).strip())
+        and not ANCORA.match(texto)
+    )
+    texto, repeticoes = next(iter(candidatos.most_common(1)), (None, 0))
+    return texto if repeticoes >= 2 else None
 
 
 def titulo_cip(linhas: list[str]) -> str | None:
@@ -207,14 +233,14 @@ def sumario_sem_paginas(linhas: list[str]) -> list[Capitulo]:
     return capitulos
 
 
-def classificar_linhas(janela: list[str]) -> list[Entrada]:
+def classificar_linhas(janela: list[str], rotulos: list[re.Pattern[str]] = CAPITULO) -> list[Entrada]:
     """Cada entrada: tipo (capitulo|marcador|subtopico), num, titulo, pag (None se romana)."""
     entradas: list[Entrada] = []
     for linha in janela:
         texto, pag = ENTRADA.match(linha).groups()  # type: ignore[union-attr]
         if not pag.isdigit():
             entradas.append({"tipo": "marcador", "num": None, "titulo": texto, "pag": None})
-        elif cap := next((m for rx in CAPITULO if (m := rx.match(linha))), None):
+        elif cap := next((m for rx in rotulos if (m := rx.match(linha))), None):
             entradas.append({"tipo": "capitulo", "num": int(cap[1]), "titulo": cap[2], "pag": int(cap[3])})
         elif MARCADOR.match(texto):
             entradas.append({"tipo": "marcador", "num": None, "titulo": texto, "pag": int(pag)})

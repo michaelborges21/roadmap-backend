@@ -150,10 +150,12 @@ por **rótulo**:
 
 ```python
 CAPITULO = [  # case-insensitive
-    r"^Cap[ií]tulo\s+(\d+)\s*[:.■]?\s*(.+?)\s+(\d+)$", # "Capítulo 2: ...", "CAPÍTULO 2: ...",
-                                                        # "Capítulo 2 ■ ...", "Capítulo 2 ..."
-    r"^(\d+)\s?\.\s+(.+?)\s+(\d+)$",                    # "2. Projeto ML... 28", "2 . Introdução... 27"
+    r"^Cap[ií]tulo\s+(\d+)\s*[:.■▪]?\s*(.+?)\s+(\d+)$", # "Capítulo 2: ...", "CAPÍTULO 2: ...",
+                                                         # "Capítulo 2 ■ ...", "Capítulo 2 ▪ ...", "Capítulo 2 ..."
+    r"^(\d+)\s?\.\s+(.+?)\s+(\d+)$",                     # "2. Projeto ML... 28", "2 . Introdução... 27"
 ]
+# Só se nenhum rótulo acima casa no sumário inteiro: "1 Introdução a algoritmos 25".
+CAPITULO_NUMERO_SOLTO = r"^(\d{1,2})\s+(?![\d.])(.+?)\s+(\d+)$"
 MARCADOR = r"^(Parte\b|Pref[áa]cio\b|Apresenta[çc][ãa]o\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)"  # case-insensitive
 ```
 
@@ -200,7 +202,10 @@ A capa fornece título, subtítulo, autor, edição e — quando o título nomei
 alimenta `linguagens` do classificador. Não fornece página nenhuma.
 
 Título: da ficha CIP quando houver (texto antes de ` / ` e de ` : `); senão, a linha de
-maior fonte da página 1. Capa em imagem (JPEG/PNG): modelo de visão local (checkpoint 4),
+maior fonte da página 1 — que não vale se for a própria âncora ("Sumário", em PDF que começa
+direto no sumário); aí, o cabeçalho corrido que se repete no topo das páginas ("6 | Nome do
+Livro"). Sem nenhum desses, `422` com instrução para enviar a capa ou um `.txt` com o título:
+título errado levaria a pesquisa de fatos (2.9) a outro livro. Capa em imagem (JPEG/PNG): modelo de visão local (checkpoint 4),
 `gemma4:12b` (checkpoint 1) — structured output com título, subtítulo, autor e edição;
 nunca páginas.
 
