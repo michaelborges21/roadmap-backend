@@ -29,6 +29,14 @@ services:
               count: all
               capabilities: [gpu]
 
+  # Busca na web para a pesquisa de fatos sobre o livro (ex.: número de páginas). Sem chave de API.
+  searxng:
+    image: searxng/searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+
 volumes:
   pgdata:
   ollama:

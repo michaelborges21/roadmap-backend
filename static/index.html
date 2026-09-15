@@ -48,7 +48,7 @@
     <input type="number" id="disponibilidade_horas" value="6" step="0.5" min="0.1" max="168">
   </label>
   <button id="btn-roadmap" onclick="gerarRoadmap()">Gerar roadmap</button>
-  <p class="aviso">A primeira geração de cada livro chama o LLM e demora ~45s. As seguintes reaproveitam a classificação e saem na hora.</p>
+  <p class="aviso">A primeira geração de cada livro pesquisa na web e chama o LLM: pode levar 1 a 2 minutos. As seguintes reaproveitam a pesquisa e a classificação e saem na hora.</p>
   <div id="saida-roadmap"></div>
 </section>
 
@@ -104,7 +104,7 @@ async function gerarRoadmap() {
     senioridade: document.getElementById("senioridade").value,
     disponibilidade_horas: Number(document.getElementById("disponibilidade_horas").value),
   };
-  saida.innerHTML = "Gerando... (pode levar até ~45s na primeira vez para este livro)";
+  saida.innerHTML = "Gerando... (na primeira vez para este livro: pesquisa na web + classificação, 1 a 2 minutos)";
 
   const r = await chamar(document.getElementById("btn-roadmap"), `/books/${bookId}/roadmaps`, {
     method: "POST",
@@ -115,13 +115,19 @@ async function gerarRoadmap() {
 
   document.getElementById("roadmap_id").value = r.corpo.id;
   const p = r.corpo;
-  const linhaCap = (c) => `<tr><td>${c.num}</td><td>${c.titulo}</td><td>${c.nivel}</td><td>${c.total.toFixed(2)}h</td></tr>`;
+  const origem = p.paginas?.origem === "pesquisa"
+    ? `estimadas a partir de ${p.paginas.paginas_totais} páginas pesquisadas (<a href="${p.paginas.url_fonte}" target="_blank">fonte</a>)<br><span class="aviso">${p.paginas.regra}</span>`
+    : "do próprio sumário";
+  const linhaCap = (c) => `<tr><td>${c.num}</td><td>${c.titulo}</td><td>${c.nivel}</td><td>${c.paginas ?? "-"}</td><td>${c.total.toFixed(2)}h</td></tr>`;
   const linhaExcl = (e) => `<tr><td>${e.num}</td><td>${e.titulo}</td><td>${e.nivel}</td></tr>`;
+  const avisos = (p.avisos || []).map((a) => `<li class="aviso">${a}</li>`).join("");
   saida.innerHTML = `
     <p><b>roadmap_id:</b> ${p.id} | <b>total:</b> ${p.total_horas.toFixed(1)}h em ${p.semanas} semanas,
     ${p.dias_por_semana} dias/semana</p>
+    <p><b>páginas:</b> ${origem}</p>
+    ${avisos ? `<ul>${avisos}</ul>` : ""}
     <h3>Capítulos no cronograma (${p.capitulos.length})</h3>
-    <table><tr><th>#</th><th>título</th><th>nível</th><th>horas</th></tr>${p.capitulos.map(linhaCap).join("")}</table>
+    <table><tr><th>#</th><th>título</th><th>nível</th><th>páginas</th><th>horas</th></tr>${p.capitulos.map(linhaCap).join("")}</table>
     <h3>Excluídos pela senioridade (${p.excluidos.length})</h3>
     <table><tr><th>#</th><th>título</th><th>nível</th></tr>${p.excluidos.map(linhaExcl).join("")}</table>
   `;

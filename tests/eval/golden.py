@@ -5,11 +5,12 @@ import statistics
 from pathlib import Path
 
 from src.calculo import planejar
-from src.classificador import Classificacao, Referencia, RespostaLLMInvalida, classificar
+from src.classificador import Classificacao, RespostaLLMInvalida, classificar
 from src.extracao import Extraido, extrair
 
 RAIZ = Path(__file__).parents[2]
 FIXTURES = RAIZ / "test_files"
+# Arquivos fora do git (test_files/ é gitignored). Ausentes → os evals do golden set pulam.
 GOLDEN = {
     "richards": "sumario-9788575229682.pdf",
     "geron": "AMOSTRA_MaosAObraAprendizadoDeMaquinaComScikit-LearnKerasTensorFlow.pdf",
@@ -30,13 +31,11 @@ def extrair_golden() -> dict[str, Extraido]:
     return {nome: extrair((FIXTURES / arq).read_bytes()) for nome, arq in GOLDEN.items() if (FIXTURES / arq).exists()}
 
 
-async def classificar_golden(
-    livros: dict[str, Extraido], referencias: dict[str, dict[int, list[Referencia]]] | None = None
-) -> dict[str, Resultado]:
+async def classificar_golden(livros: dict[str, Extraido]) -> dict[str, Resultado]:
     resultados: dict[str, Resultado] = {}
     for nome, ext in livros.items():
         try:
-            resultados[nome] = (ext, await classificar(ext.titulo, ext.capitulos, (referencias or {}).get(nome)))
+            resultados[nome] = (ext, await classificar(ext.titulo, ext.capitulos))
         except RespostaLLMInvalida as exc:
             resultados[nome] = (ext, exc)
     return resultados

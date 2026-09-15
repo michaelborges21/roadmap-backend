@@ -9,9 +9,9 @@ Erros de domínio respondem `{"detail": "<mensagem legível>"}`. Erros de valida
 | Código | Significado |
 |---|---|
 | `415` | Tipo de arquivo não suportado. |
-| `422` | Extração ambígua, livro sem sumário ou pedido inválido. Nunca um número silenciosamente errado. |
+| `422` | Extração ambígua, livro sem sumário, sumário sem páginas sem fonte confiável na web, ou pedido inválido. Nunca um número silenciosamente errado. |
 | `502` | O LLM respondeu fora do contrato (schema, capítulo faltando, resposta cortada). |
-| `503` | Modelo não configurado ou Ollama inacessível. |
+| `503` | Modelo não configurado, Ollama inacessível, ou SearXNG inacessível quando o roadmap depende da pesquisa. |
 
 ---
 
@@ -23,7 +23,11 @@ Upload de sumário ou capa. `multipart/form-data`, campo `arquivo`.
 |---|---|
 | `application/pdf` | Extração determinística (sumário, ou capa se não houver sumário). |
 | `image/jpeg`, `image/png` | Capa lida por modelo de visão. |
-| `.txt`, `.md` (qualquer `content_type`; a extensão desempata) | Mesma extração determinística do PDF, sem página/fonte/marca d'água — exige a mesma convenção "Título ... página real do livro" em cada linha. |
+| `.txt`, `.md` (qualquer `content_type`; a extensão desempata) | Mesma extração determinística do PDF, sem fonte e sem marca d'água. |
+
+O sumário pode vir **com** página ao fim de cada linha (`Capítulo 2: Título 32`) ou **sem**
+paginação (e-book, página de loja, texto digitado). Sem paginação, os capítulos saem com
+`pag_inicio` e `paginas` nulos; as páginas vêm da pesquisa na web ao gerar o roadmap.
 
 | Resposta | Quando |
 |---|---|
@@ -33,18 +37,18 @@ Upload de sumário ou capa. `multipart/form-data`, campo `arquivo`.
 | `422` | Extração ambígua (ver RF-EXT-07). |
 | `502` / `503` | Só para imagem de capa. |
 
-Exemplo (título, páginas e 1º capítulo reais do sumário do Richards; lista abreviada):
+Exemplo ilustrativo (lista abreviada):
 
 ```json
 {
-  "id": 1,
-  "titulo": "Fundamentos da arquitetura de software",
+  "id": 12,
+  "titulo": "Nome do Livro",
   "origem": "sumario",
-  "paginas_conteudo": 454,
+  "paginas_conteudo": 310,
   "paginas_fisicas": null,
   "capitulos": [
-    {"num": 1, "titulo": "Introdução", "pag_inicio": 20, "paginas": 11,
-     "subtopicos": ["Definindo a arquitetura de software", "..."]}
+    {"num": 1, "titulo": "Introdução", "pag_inicio": 15, "paginas": 18,
+     "subtopicos": ["Por que este livro", "..."]}
   ],
   "falta_sumario": false
 }
@@ -67,38 +71,50 @@ Exemplo (título, páginas e 1º capítulo reais do sumário do Richards; lista 
 
 | Resposta | Quando |
 |---|---|
-| `201` | Roadmap criado. Na primeira vez para o livro, classifica (~45s com `gemma4:12b`); depois reaproveita. |
+| `201` | Roadmap criado. Na primeira vez para o livro, pesquisa na web e classifica (1 a 2 min com `gemma4:12b`); depois reaproveita as duas coisas. |
 | `404` | Livro inexistente. |
-| `422` | Livro sem sumário (só capa) ou pedido inválido. |
-| `502` / `503` | Falha do classificador (só na primeira classificação do livro). |
+| `422` | Livro sem sumário (só capa), sumário sem páginas e sem fonte confiável na web, ou pedido inválido. |
+| `502` / `503` | Falha do classificador ou da pesquisa (só na primeira vez para o livro). Pesquisa fora do ar só vira `503` se o sumário não tem páginas; com páginas, vira aviso. |
 
 Exemplo ilustrativo do formato (valores não vêm de uma execução real):
 
 ```json
 {
   "id": 7,
-  "book_id": 1,
+  "book_id": 12,
   "senioridade": "Pleno",
   "disponibilidade_horas": 6.0,
   "total_horas": 31.7,
   "semanas": 6,
   "dias_por_semana": 3,
   "capitulos": [
-    {"num": 2, "titulo": "Pensamento arquitetural", "nivel": "intermediario",
+    {"num": 2, "titulo": "Fundamentos", "nivel": "intermediario", "paginas": 22,
      "leitura": 0.9, "codigo": 0.0, "escrita": 0.14, "total": 1.04,
      "fatores": {"senioridade": 1.0, "gap": 1.0, "baixo_nivel": 1.0, "peso": 1.0}}
   ],
   "excluidos": [{"num": 1, "titulo": "Introdução", "nivel": "iniciante"}],
   "cronograma": [
     {"semana": 1, "horas": 6.0, "capitulos": [{"num": 2, "horas": 1.04}, {"num": 3, "horas": 4.96}]}
-  ]
+  ],
+  "paginas": {
+    "origem": "pesquisa",
+    "paginas_totais": 344,
+    "url_fonte": "https://editora.exemplo/livro",
+    "regra": "Sumário sem paginação: o total de páginas pesquisado foi repartido entre os capítulos..."
+  },
+  "avisos": ["Outras contagens de páginas vistas na web (podem ser de outro livro ou edição): 488 páginas (rede.exemplo)"]
 }
 ```
 
-- `capitulos`: só os que entram no cronograma, com horas e `fatores` aplicados.
+- `capitulos`: só os que entram no cronograma, com páginas, horas e `fatores` aplicados.
 - `excluidos`: capítulos com nível abaixo da senioridade ([ADR 0002](adr/0002-senioridade-filtra-capitulos.md)).
   Livro inteiro abaixo do nível → `capitulos: []`, `semanas: 0`, sem erro.
 - Um capítulo aparece em mais de uma semana só se forem semanas adjacentes.
+- `paginas.origem`: `"sumario"` (páginas do próprio sumário) ou `"pesquisa"` (total achado na
+  web, com `url_fonte`, repartido pela `regra` — estimado). `null` em roadmaps criados antes da
+  pesquisa de fatos ([ADR 0004](adr/0004-pesquisa-web-com-fatos-verificaveis.md)).
+- `avisos`: divergências e limitações que o leitor precisa saber (contagens diferentes na web,
+  pesquisa indisponível, sumário maior que a fonte pesquisada).
 
 ---
 

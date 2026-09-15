@@ -1,0 +1,14 @@
+# SearXNG local para a pesquisa de fatos sobre livros. Só roda na máquina de desenvolvimento.
+use_default_settings: true
+
+server:
+  # Obrigatório trocar o padrão, senão o SearXNG não sobe. Uso local, sem exposição pública.
+  secret_key: "roadmap-backend-dev-local"
+  limiter: false
+  image_proxy: false
+
+search:
+  # json é o formato que a API consome; html mantém a interface web para depuração.
+  formats:
+    - html
+    - json

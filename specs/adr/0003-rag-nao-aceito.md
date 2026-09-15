@@ -1,6 +1,8 @@
 # ADR 0003 — RAG implementado, mas não aceito em produção
 
-- **Status:** aceito (RAG desligado: `rag.ativo: false`)
+- **Status:** substituído pelo [ADR 0004](0004-pesquisa-web-com-fatos-verificaveis.md) em 2026-09-15.
+  O RAG de referências entre capítulos foi removido do código; o RAG atual é uma base de fatos
+  pesquisados na web. As medições abaixo continuam válidas como histórico.
 - **Data:** 2026-09-14
 - **Implementação:** `src/rag.py`, medição em `tests/eval/test_rag.py`, resultado em `evals/rag.json`
 
@@ -46,9 +48,10 @@ O código continua no repositório, desligado e testado com mocks, porque:
 
 ## Consequências
 
-- O prompt de produção é o da baseline; com `rag.ativo: false` ele é idêntico
-  (`tests/test_classificador.py::test_referencias_rag_entram_no_prompt_so_quando_existem`).
-- Cada classificação faz uma chamada extra de embedding (~1s), mesmo com o RAG desligado.
+- O prompt de produção ficou o da baseline; com `rag.ativo: false` ele era idêntico (havia
+  um teste para isso, removido junto com o código em 2026-09-15).
+- Enquanto existiu, cada classificação fazia uma chamada extra de embedding (~1s), mesmo com o
+  RAG desligado. Deixou de existir com o ADR 0004.
 - **Reavaliar quando o corpus tiver muitos livros da mesma área.** Com 6 livros de áreas
   diferentes, quase nenhum capítulo tem vizinho real.
 - Lição de processo: todo ganho de prompt precisa de controle que isole a mudança. Sem ele,

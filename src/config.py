@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
     database_url: str = "postgresql+asyncpg://roadmap:roadmap@localhost:5433/roadmap"
     ollama_host: str = "http://localhost:11435"
+    searxng_url: str = "http://localhost:8888"
 
 
 class Extracao(BaseModel):
@@ -43,18 +44,22 @@ class LLM(BaseModel):
     timeout_s: float
 
 
-class Rag(BaseModel):
-    ativo: bool
-    prefixo: str
-    referencias_por_capitulo: int
-    similaridade_min: float
+class PesquisaWeb(BaseModel):
+    resultados_web: int
+    paginas_baixadas: int
+    timeout_s: float
+    trechos_consulta: int
+    janela_antes: int
+    janela_depois: int
+    prefixo_documento: str
+    prefixo_consulta: str
 
 
 class Config(BaseModel):
     extracao: Extracao
     calculo: Calculo
     llm: LLM
-    rag: Rag
+    pesquisa: PesquisaWeb
 
 
 settings = Settings()

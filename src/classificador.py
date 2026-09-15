@@ -1,4 +1,4 @@
-"""Chamadas ao LLM (spec 2.5–2.6, 4): o modelo só julga, transcreve e redige, nunca calcula."""
+"""Chamadas ao LLM (spec 2.5–2.6): o modelo só julga, transcreve e redige, nunca calcula."""
 
 import json
 from typing import Literal
@@ -38,16 +38,6 @@ class Explicacao(BaseModel):
     explicacao: str = Field(min_length=1)
 
 
-class Referencia(BaseModel):
-    """Capítulo parecido de outro livro, com o julgamento que já recebeu (RAG)."""
-
-    livro: str
-    capitulo: str
-    nivel: Nivel
-    peso: float
-    similaridade: float
-
-
 class RespostaLLMInvalida(Exception):
     """Vira 502: o modelo respondeu, mas fora do contrato."""
 
@@ -74,10 +64,6 @@ relativo de esforço (1.0 = médio, entre 0.5 e 2.0). Não estime tempo.
 Julgue cada capítulo de forma consistente: capítulos com profundidade e esforço equivalentes \
 recebem o mesmo nível e o mesmo peso."""
 
-NOTA_REFERENCIAS = """Linhas com ≈ mostram como capítulos parecidos de outros livros já foram \
-julgados. Use como referência de calibração, não como resposta: o capítulo deste livro pode ser \
-diferente."""
-
 PROMPT_CAPA = """Você lê capas de livros técnicos. Transcreva exatamente o que aparece na imagem: \
 titulo = o nome do livro em destaque, sem o subtítulo; subtitulo = a linha que completa o nome \
 (ex.: "Uma abordagem moderna"); autor; edicao. Slogan ou chamada de marketing não é título nem \
@@ -87,8 +73,8 @@ PROMPT_EXPLICAR = """Você explica cronogramas de estudo. Usando só os dados fo
 leitor, em 2 a 4 frases em português, por que este capítulo tem essas horas ou por que ficou fora \
 do cronograma. Significado dos fatores: senioridade = ajuste pela experiência do leitor; gap = livro \
 acima do nível do leitor; baixo_nivel = linguagem de baixo nível (C, Rust...); peso = esforço \
-relativo do capítulo, julgado pelos subtópicos. Fator 1.0 = sem efeito. Não recalcule nem invente \
-números."""
+relativo do capítulo, julgado pelos subtópicos. Se as páginas vieram de pesquisa na web, diga que \
+são estimadas. Fator 1.0 = sem efeito. Não recalcule nem invente números."""
 
 
 async def chat[T: BaseModel](modelo: str | None, papel: str, messages: list[dict[str, object]], schema: type[T]) -> T:
@@ -124,21 +110,12 @@ async def chat[T: BaseModel](modelo: str | None, papel: str, messages: list[dict
         ) from exc
 
 
-async def classificar(
-    titulo: str, capitulos: list[Capitulo], referencias: dict[int, list[Referencia]] | None = None
-) -> Classificacao:
-    refs = referencias or {}
+async def classificar(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
     # Só títulos e subtópicos: sem páginas no prompt, para não convidar o modelo a fazer conta.
-    sumario = "\n".join(
-        f"{c.num}. {c.titulo}"
-        + "".join(f"\n   - {s}" for s in c.subtopicos)
-        + "".join(f'\n   ≈ parecido com "{r.capitulo}" ({r.livro}): {r.nivel}, peso {r.peso}' for r in refs.get(c.num, []))
-        for c in capitulos
-    )
-    nota = f"{NOTA_REFERENCIAS}\n\n" if refs else ""
+    sumario = "\n".join(f"{c.num}. {c.titulo}" + "".join(f"\n   - {s}" for s in c.subtopicos) for c in capitulos)
     messages: list[dict[str, object]] = [
         {"role": "system", "content": PROMPT},
-        {"role": "user", "content": f"{nota}Título: {titulo}\n\n{sumario}"},
+        {"role": "user", "content": f"Título: {titulo}\n\n{sumario}"},
     ]
     cls = await chat(config.llm.modelo_classificador, "do classificador", messages, Classificacao)
     if sorted(c.num for c in cls.capitulos) != sorted(c.num for c in capitulos):

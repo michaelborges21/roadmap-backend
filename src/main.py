@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.calculo import Plano, Senioridade, planejar
+from src.calculo import REGRA_DISTRIBUICAO, OrigemPaginas, Plano, Senioridade, distribuir_paginas, planejar
 from src.classificador import (
     Classificacao,
     Explicacao,
@@ -19,11 +19,10 @@ from src.classificador import (
     explicar,
     ler_capa,
 )
-from src.config import config
 from src.db import get_session
 from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair, extrair_texto
 from src.models import Book, Roadmap
-from src.rag import indexar, referencias, texto_chunk
+from src.pesquisa import Pesquisa, PesquisaIndisponivel, pesquisar
 
 app = FastAPI(title="roadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -70,6 +69,11 @@ async def llm_indisponivel(request: Request, exc: LLMIndisponivel) -> JSONRespon
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
+@app.exception_handler(PesquisaIndisponivel)
+async def pesquisa_indisponivel(request: Request, exc: PesquisaIndisponivel) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
 @app.post("/books", status_code=201)
 async def criar_book(arquivo: UploadFile, response: Response, session: SessionDep) -> BookCriado:
     nome = (arquivo.filename or "").lower()
@@ -113,11 +117,45 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
         raise HTTPException(422, "Livro sem sumário: envie o PDF do sumário para gerar o cronograma.")
 
     capitulos = [Capitulo.model_validate(c) for c in book.capitulos]
+    sem_paginas = any(c.paginas is None for c in capitulos)
+    avisos: list[str] = []
+
+    if book.pesquisa is None:  # uma vez por livro, como a classificação
+        try:
+            book.pesquisa = (await pesquisar(session, book, capitulos)).model_dump(mode="json")
+        except PesquisaIndisponivel as exc:
+            if sem_paginas:
+                raise  # sem página no sumário e sem pesquisa, não há número honesto para calcular
+            avisos.append(f"Pesquisa na web indisponível; páginas do sumário usadas sem conferência ({exc}).")
+    pesquisa = Pesquisa.model_validate(book.pesquisa) if book.pesquisa else None
+
+    if sem_paginas:
+        if pesquisa is None or pesquisa.paginas_totais is None:
+            await session.commit()  # guarda a pesquisa e a base RAG: a próxima tentativa não refaz a busca à toa
+            motivo = pesquisa.justificativa if pesquisa else ""
+            raise HTTPException(
+                422, f"Sumário sem números de página e nenhuma fonte confiável com o total de páginas. {motivo} Envie um sumário paginado."
+            )
+        capitulos = distribuir_paginas(capitulos, pesquisa.paginas_totais)
+        origem = OrigemPaginas(
+            origem="pesquisa", paginas_totais=pesquisa.paginas_totais, url_fonte=pesquisa.url_fonte, regra=REGRA_DISTRIBUICAO
+        )
+    else:
+        origem = OrigemPaginas(origem="sumario", paginas_totais=book.paginas_conteudo)
+        if pesquisa and pesquisa.paginas_totais and book.paginas_conteudo and book.paginas_conteudo > pesquisa.paginas_totais:
+            avisos.append(
+                f"O sumário soma {book.paginas_conteudo} páginas de conteúdo, mas a fonte pesquisada diz "
+                f"{pesquisa.paginas_totais} ({pesquisa.url_fonte}): edição diferente?"
+            )
+    if pesquisa and pesquisa.outras_contagens:
+        avisos.append(
+            "Outras contagens de páginas vistas na web (podem ser de outro livro ou edição): " + ", ".join(pesquisa.outras_contagens)
+        )
+
     if book.classificacao is None:  # cache entre usuários: classifica uma vez por livro
-        await indexar(session, book, capitulos)
-        refs = await referencias(session, book.id, capitulos) if config.rag.ativo else None
-        book.classificacao = (await classificar(book.titulo, capitulos, refs)).model_dump()
+        book.classificacao = (await classificar(book.titulo, capitulos)).model_dump()
     plano = planejar(capitulos, Classificacao.model_validate(book.classificacao), pedido.senioridade, pedido.disponibilidade_horas)
+    plano = plano.model_copy(update={"paginas": origem, "avisos": avisos})
 
     roadmap = Roadmap(
         book_id=book.id,
@@ -148,9 +186,11 @@ async def explicar_capitulo(roadmap_id: int, capitulo: int, session: SessionDep)
     if horas:
         dados |= {
             "nivel_do_capitulo": horas.nivel,
+            "paginas": horas.paginas,
+            "origem_das_paginas": plano.paginas.origem if plano.paginas else "sumario",
             "horas": {k: round(getattr(horas, k), 1) for k in ("leitura", "codigo", "escrita", "total")},
             "fatores": horas.fatores.model_dump(),
         }
     else:
         dados |= {"nivel_do_capitulo": excluido.nivel, "fora_do_cronograma": "nível do capítulo abaixo da senioridade do leitor"}  # type: ignore[union-attr]
-    return await explicar(texto_chunk(cap), dados)
+    return await explicar("\n".join([cap.titulo, *cap.subtopicos]), dados)

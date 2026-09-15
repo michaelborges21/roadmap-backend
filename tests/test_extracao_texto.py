@@ -65,6 +65,41 @@ def test_txt_nao_utf8_e_ambiguo():
         extrair_texto("Sumário açúcar".encode("latin-1"), markdown=False)
 
 
+SUMARIO_SEM_PAGINAS = """LLMs – As Partes Difíceis
+
+Descrição do livro
+Os LLMs transformaram o processamento de linguagem natural, mas implantá-los em aplicações introduz inúmeros desafios técnicos.
+
+Sumário
+Apresentação
+Prefácio
+CAPÍTULO 1: Princípios básicos: o que considerar antes de construir com LLMs
+Por que open source?
+Considerações estratégicas
+CAPÍTULO 2: A lacuna da avaliação
+Temperatura
+CAPÍTULO 3: Epílogo: LLMBAs na era da queda dos custos de inferência
+APÊNDICE: Ferramentas para implantação local de LLMs
+Ollama
+Índice remissivo
+"""
+
+
+def test_sumario_sem_paginacao_reconhece_capitulos_sem_inventar_paginas():
+    ext = extrair_texto(SUMARIO_SEM_PAGINAS.encode(), markdown=False)
+    assert (ext.titulo, ext.origem, ext.paginas_conteudo) == ("LLMs – As Partes Difíceis", "sumario", None)
+    assert [(c.num, c.titulo, c.paginas, c.pag_inicio, c.subtopicos) for c in ext.capitulos] == [
+        (1, "Princípios básicos: o que considerar antes de construir com LLMs", None, None, ["Por que open source?", "Considerações estratégicas"]),
+        (2, "A lacuna da avaliação", None, None, ["Temperatura"]),
+        (3, "Epílogo: LLMBAs na era da queda dos custos de inferência", None, None, []),  # apêndice não vira subtópico
+    ]
+
+
+def test_sumario_sem_paginacao_e_sem_capitulo_continua_422():
+    with pytest.raises(ExtracaoAmbigua, match="nenhum capítulo reconhecido"):
+        extrair_texto(b"Livro\n\nSumario\nIntroducao\nConclusao\n", markdown=False)
+
+
 def test_txt_sanidade_cip_ainda_vale_se_o_texto_incluir_a_ficha():
     texto = (
         "Dados Internacionais de Catalogação na Publicação (CIP)\n"

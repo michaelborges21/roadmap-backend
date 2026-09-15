@@ -6,8 +6,9 @@ Decisões: [`adr/`](adr/).
 Todo requisito funcional aponta para o teste que o verifica. `tests/test_specs.py` falha se uma
 referência apontar para teste inexistente ou se um RF ficar sem teste.
 
-- `tests/*.py` — suíte padrão, LLM mockado: `uv run pytest` (~6s).
-- `tests/eval/*.py` — LLM real, fora do CI: `uv run pytest -m eval` (~4 min propriedades, ~6 min RAG).
+- `tests/*.py` — suíte padrão, LLM, web e embedding mockados: `uv run pytest` (~8s).
+- `tests/eval/*.py` — LLM e web reais, fora do CI: `uv run pytest -m eval` (~4 min propriedades,
+  ~1–2 min pesquisa na web).
 
 ## Extração (spec 2.1–2.5)
 
@@ -18,12 +19,13 @@ referência apontar para teste inexistente ou se um RF ficar sem teste.
 | RF-EXT-03 | Capítulo é identificado por rótulo (`Capítulo N:`, `Capítulo N ■`, `N.`), com o mesmo shape. | `tests/test_extracao.py::test_dois_formatos_de_rotulo_mesmo_shape` |
 | RF-EXT-04 | Páginas do capítulo = próxima fronteira (capítulo **ou marcador**) − início. | `tests/test_extracao.py::test_fronteira_por_marcador`, `tests/test_extracao.py::test_fechar_paginas_sintetico`, `tests/test_extracao.py::test_richards_golden` |
 | RF-EXT-05 | Front matter (romano ou arábico) fica fora da contagem. | `tests/test_extracao.py::test_front_matter_romano_e_arabico_fora_da_conta` |
-| RF-EXT-06 | `paginas_conteudo <= paginas_fisicas` quando há ficha CIP. | `tests/test_extracao.py::test_sanidade_cip` |
+| RF-EXT-06 | `paginas_conteudo <= paginas_fisicas` quando há ficha CIP. | `tests/test_extracao.py::test_sanidade_cip`, `tests/test_extracao_texto.py::test_txt_sanidade_cip_ainda_vale_se_o_texto_incluir_a_ficha` |
 | RF-EXT-07 | Extração ambígua retorna `422` com mensagem clara: sequência não crescente, capítulo sem fronteira final, PDF que parece o livro completo. | `tests/test_extracao.py::test_sequencia_nao_crescente_422`, `tests/test_extracao.py::test_capitulo_sem_fronteira_final_422`, `tests/test_extracao.py::test_livro_completo_422` |
-| RF-EXT-08 | Título vem da ficha CIP; sem ficha, da maior fonte da capa. | `tests/test_extracao.py::test_richards_golden`, `tests/test_extracao.py::test_titulo_cip_com_barra_no_fim_da_linha` |
-| RF-EXT-09 | PDF só de capa gera `Book` com `capitulos=[]` e sem páginas. | `tests/test_extracao.py::test_capa_isolada_sem_inventar_paginas` |
+| RF-EXT-08 | Título vem da ficha CIP; sem ficha, da maior fonte da capa (PDF) ou da 1ª linha antes do sumário (texto). | `tests/test_extracao.py::test_richards_golden`, `tests/test_extracao.py::test_titulo_cip_com_barra_no_fim_da_linha`, `tests/test_extracao_texto.py::test_txt_mesma_convencao_da_pdf` |
+| RF-EXT-09 | Arquivo só de capa gera `Book` com `capitulos=[]` e sem páginas. | `tests/test_extracao.py::test_capa_isolada_sem_inventar_paginas`, `tests/test_extracao_texto.py::test_txt_so_titulo_vira_capa` |
 | RF-EXT-10 | Capa em imagem é transcrita por modelo de visão (título, subtítulo, autor, edição — nunca páginas). | `tests/test_classificador.py::test_capa_em_imagem`, `tests/test_classificador.py::test_capa_sem_titulo_e_invalida`, `tests/eval/test_propriedades.py::test_capa_jpeg` |
-| RF-EXT-11 | `.txt`/`.md` seguem a mesma convenção "Título ... página real do livro" do sumário em PDF (sem fonte, sem marca d'água, sem checagem de "livro completo" por nº de páginas do arquivo). Detecção por `content_type` ou extensão. | `tests/test_extracao_texto.py`, `tests/test_api.py::test_upload_book_cache_e_erros` |
+| RF-EXT-11 | `.txt`/`.md` seguem as mesmas regras do sumário em PDF, sem fonte, marca d'água nem checagem de "livro completo" por nº de páginas do arquivo. Markdown é despojado sem perder a lista numerada. Detecção por `content_type` ou extensão. | `tests/test_extracao_texto.py::test_txt_mesma_convencao_da_pdf`, `tests/test_extracao_texto.py::test_md_despoja_marcacao_mas_preserva_lista_numerada`, `tests/test_api.py::test_upload_texto_capa_cache_e_erros` |
+| RF-EXT-12 | Sumário sem paginação (nenhuma linha termina em página arábica): capítulos por rótulo, subtópicos por posição, apresentação/prefácio/apêndice fora. A lista para no índice remissivo ou em texto corrido. Páginas ficam nulas até a pesquisa (RF-PES-01) — nunca inventadas na extração. | `tests/test_extracao_texto.py::test_sumario_sem_paginacao_reconhece_capitulos_sem_inventar_paginas`, `tests/test_extracao_texto.py::test_sumario_sem_paginacao_e_sem_capitulo_continua_422`, `tests/test_api.py::test_upload_texto_capa_cache_e_erros` |
 
 ## Classificação (spec 2.6)
 
@@ -46,29 +48,31 @@ referência apontar para teste inexistente ou se um RF ficar sem teste.
 | RF-CAL-04 | Fator de gap (livro acima da senioridade) e de baixo nível (C, Rust...). | `tests/test_calculo.py::test_gap_quando_livro_acima_da_senioridade`, `tests/test_calculo.py::test_baixo_nivel`, `tests/eval/test_propriedades.py::test_baixo_nivel` |
 | RF-CRO-01 | `semanas = ceil(total / disponibilidade)`, capítulos em ordem, divididos só entre semanas adjacentes, `dias = min(7, ceil(disp / 2))`. | `tests/test_calculo.py::test_cronograma_coerente`, `tests/eval/test_propriedades.py::test_coerencia_aritmetica` |
 
+## Pesquisa de fatos e base RAG (spec 2.9 e 4, [ADR 0004](adr/0004-pesquisa-web-com-fatos-verificaveis.md))
+
+| ID | Requisito | Verificado por |
+|---|---|---|
+| RF-PES-01 | Sumário sem paginação: o total de páginas vem da pesquisa na web e o Python o reparte entre os capítulos na proporção de 1 + nº de subtópicos, com soma exata. O plano registra origem, fonte e regra. | `tests/test_distribuir_paginas.py::test_soma_fecha_exatamente_no_total`, `tests/test_distribuir_paginas.py::test_proporcional_a_um_mais_subtopicos`, `tests/test_api.py::test_roadmap_de_sumario_sem_paginas` |
+| RF-PES-02 | O modelo só escolhe a fonte e transcreve o número. O Python só o aceita se o modelo disser que o trecho é deste livro, se o número estiver escrito no trecho da URL citada e se for plausível para o nº de capítulos. | `tests/test_pesquisa.py::test_aceita_numero_escrito_na_fonte_citada_e_lista_divergencias`, `tests/test_pesquisa.py::test_descarta_numero_que_nao_esta_na_fonte_citada`, `tests/test_pesquisa.py::test_descarta_numero_de_outra_fonte_que_nao_a_citada`, `tests/test_pesquisa.py::test_descarta_url_que_nao_foi_consultada`, `tests/test_pesquisa.py::test_respeita_quando_o_modelo_diz_que_nao_e_o_mesmo_livro`, `tests/test_pesquisa.py::test_descarta_total_implausivel` |
+| RF-PES-03 | A base RAG (pgvector) guarda só janelas de texto em volta de "páginas" que trazem uma contagem, com a URL de origem — ficha técnica, nunca corpo de livro. Na segunda pesquisa do mesmo livro, a base é reaproveitada sem voltar à web. | `tests/test_pesquisa.py::test_trechos_guardam_so_a_ficha_em_volta_de_paginas`, `tests/test_pesquisa.py::test_contagem_le_formatos_reais_e_ignora_isbn`, `tests/test_api.py::test_pesquisa_guarda_trechos_na_base_e_reaproveita` |
+| RF-PES-04 | Contagens de páginas divergentes vistas na web viram aviso no plano, não somem. | `tests/test_pesquisa.py::test_aceita_numero_escrito_na_fonte_citada_e_lista_divergencias`, `tests/test_api.py::test_roadmap_de_sumario_sem_paginas` |
+| RF-PES-05 | Sem páginas no sumário e sem fonte confiável → `422`. Pesquisa fora do ar → `503` se o roadmap depende dela; aviso no plano se o sumário é paginado. | `tests/test_api.py::test_roadmap_de_sumario_sem_paginas` |
+| RF-PES-06 | Com web e modelo reais, um livro sem paginação tem o total encontrado com fonte verificada. | `tests/eval/test_pesquisa_web.py::test_encontra_total_de_paginas_com_fonte_verificada` |
+
 ## API
 
 | ID | Requisito | Verificado por |
 |---|---|---|
-| RF-API-01 | `POST /books`: `201` ao criar, `200` para o mesmo arquivo (cache por hash), `415` para tipo não suportado, `422` para extração ambígua. | `tests/test_api.py::test_upload_book_cache_e_erros` |
-| RF-API-02 | `POST /books/{id}/roadmaps`: `201`; `404` sem livro; `422` sem sumário ou com pedido inválido. | `tests/test_api.py::test_fluxo_roadmap` |
+| RF-API-01 | `POST /books`: `201` ao criar, `200` para o mesmo arquivo (cache por hash), `415` para tipo não suportado, `422` para extração ambígua. | `tests/test_api.py::test_upload_texto_capa_cache_e_erros`, `tests/test_api.py::test_upload_pdf_cache_e_erros` |
+| RF-API-02 | `POST /books/{id}/roadmaps`: `201`; `404` sem livro; `422` sem sumário ou com pedido inválido; o plano traz `paginas` (origem) e `avisos`. | `tests/test_api.py::test_fluxo_roadmap`, `tests/test_api.py::test_roadmap_de_sumario_sem_paginas` |
 | RF-API-03 | `GET /roadmaps/{id}/explicar`: o LLM redige a partir dos fatores persistidos ou do motivo da exclusão; `404` para capítulo inexistente. | `tests/test_api.py::test_fluxo_roadmap`, `tests/test_classificador.py::test_explicar_recebe_dados_calculados` |
-
-## RAG (spec 4) — implementado, desligado ([ADR 0003](adr/0003-rag-nao-aceito.md))
-
-| ID | Requisito | Verificado por |
-|---|---|---|
-| RF-RAG-01 | Um chunk por capítulo (título + subtópicos), nunca corpo do livro. | `tests/test_api.py::test_fluxo_roadmap` |
-| RF-RAG-02 | Referências só de **outros** livros já classificados, acima de `similaridade_min`. | `tests/test_api.py::test_referencias_so_de_outros_livros_classificados` |
-| RF-RAG-03 | Com `rag.ativo: false`, o prompt é idêntico ao da baseline. | `tests/test_classificador.py::test_referencias_rag_entram_no_prompt_so_quando_existem` |
-| RF-RAG-04 | Aceite só se a variância cair contra controle. | `tests/eval/test_rag.py::test_relatorio_rag` |
 
 ## Não funcionais
 
 | ID | Requisito | Como se verifica |
 |---|---|---|
-| RNF-01 | Nenhuma aritmética sai do LLM; o único número julgado é o peso, limitado e validado. | [ADR 0001](adr/0001-aritmetica-fora-do-llm.md); RF-CLS-01, RF-CAL-01 |
-| RNF-02 | Só sumário e capa são armazenados; nunca o corpo do livro. | RF-EXT-01, RF-RAG-01 |
-| RNF-03 | LLM e embedding locais (Ollama); sem provider cloud. | `config.yaml` (`llm`), revisão |
-| RNF-04 | Suíte padrão roda sem LLM e sem GPU. | `uv run pytest` com Ollama desligado |
+| RNF-01 | Nenhuma aritmética sai do LLM. Ele julga categorias e peso (limitado e validado) e, na pesquisa, só escolhe a fonte e transcreve o número. | [ADR 0001](adr/0001-aritmetica-fora-do-llm.md), [ADR 0004](adr/0004-pesquisa-web-com-fatos-verificaveis.md); RF-CLS-01, RF-CAL-01, RF-PES-02 |
+| RNF-02 | Só sumário, capa e ficha técnica pesquisada são armazenados; nunca o corpo do livro. | RF-EXT-01, RF-PES-03 |
+| RNF-03 | LLM, embedding e busca na web locais e gratuitos (Ollama, SearXNG); sem provider cloud nem API paga. | `config.yaml` (`llm`, `pesquisa`), `docker-compose.yml`, revisão |
+| RNF-04 | Suíte padrão roda sem LLM, sem GPU e sem internet. | `uv run pytest` com Ollama e SearXNG desligados |
 | RNF-05 | Mudança de prompt ou constante só entra comparada contra `evals/baseline.json`, com controle que isole a mudança. | `tests/eval/test_propriedades.py::test_baseline` |

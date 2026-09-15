@@ -20,6 +20,7 @@ class Book(Base):
     paginas_fisicas: Mapped[int | None]  # da ficha CIP, quando houver
     capitulos: Mapped[list] = mapped_column(JSONB, default=list)
     classificacao: Mapped[dict | None] = mapped_column(JSONB)
+    pesquisa: Mapped[dict | None] = mapped_column(JSONB)  # fatos da web com fonte (spec 2.9)
 
 
 class Roadmap(Base):
@@ -36,5 +37,6 @@ class Chunk(Base):
     __tablename__ = "chunk"
     id: Mapped[int] = mapped_column(primary_key=True)
     book_id: Mapped[int] = mapped_column(ForeignKey("book.id"))
-    texto: Mapped[str]  # título do cap + subtópicos
+    texto: Mapped[str]  # trecho de página web em volta de "páginas" — ficha técnica, nunca corpo do livro
+    fonte: Mapped[str]  # URL de onde o trecho saiu
     embedding: Mapped[list[float]] = mapped_column(Vector(768))

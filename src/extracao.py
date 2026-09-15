@@ -22,8 +22,8 @@ class ExtracaoAmbigua(Exception):
 class Capitulo(BaseModel):
     num: int
     titulo: str
-    pag_inicio: int
-    paginas: int
+    pag_inicio: int | None  # None: sumário sem paginação
+    paginas: int | None  # None até a pesquisa de fatos preencher (spec 2.9)
     subtopicos: list[str] = []
 
 
@@ -45,7 +45,10 @@ CAPITULO = [
     re.compile(r"^Cap[ií]tulo\s+(\d+)\s*[:.■]?\s*(.+?)\s+(\d+)$", re.I),
     re.compile(r"^(\d+)\s?\.\s+(.+?)\s+(\d+)$"),
 ]
-MARCADOR = re.compile(r"^(Parte\b|Pref[áa]cio\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)", re.I)
+# Mesmos rótulos, sem página no fim (sumário sem paginação: e-book, página de loja, texto digitado).
+CAPITULO_SEM_PAGINA = re.compile(r"^(?:Cap[ií]tulo\s+(\d+)\s*[:.■]?\s*|(\d+)\s?\.\s+)(.+)$", re.I)
+MARCADOR = re.compile(r"^(Parte\b|Pref[áa]cio\b|Apresenta[çc][ãa]o\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)", re.I)
+FIM_DO_SUMARIO = re.compile(r"^[ÍI]ndice", re.I)
 CIP_PAGINAS = re.compile(r"\b(\d+)\s*p\.")
 CIP_AUTOR = re.compile(r"[A-ZÀ-Ý][\wÀ-ÿ'-]+, [A-ZÀ-Ý][\wÀ-ÿ. ]*$")
 
@@ -92,12 +95,18 @@ def _extrair_de_linhas(
         return Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
 
     inicio, janela = loc
-    capitulos, conteudo = fechar_paginas(classificar_linhas(janela))
+    # Paginado só se alguma linha termina em página arábica: título acabado em "mil" ou "civil" casa
+    # o padrão romano de ENTRADA e não pode, sozinho, desviar um sumário sem paginação.
+    if any(ENTRADA.match(l)[2].isdigit() for l in janela):  # type: ignore[index]
+        capitulos, conteudo = fechar_paginas(classificar_linhas(janela))
+    else:
+        # Nenhuma linha termina em página: sumário sem paginação. As páginas vêm da pesquisa de fatos (spec 2.9).
+        capitulos, conteudo = sumario_sem_paginas(linhas[inicio + 1 :]), None
     antes = linhas[:inicio]
     fisicas = next((int(m[1]) for l in antes if (m := CIP_PAGINAS.search(l))), None)
-    if fisicas is not None and conteudo > fisicas:
+    if fisicas is not None and conteudo is not None and conteudo > fisicas:
         raise ExtracaoAmbigua(f"Sumário soma {conteudo} páginas de conteúdo, mas a ficha CIP diz {fisicas}.")
-    if n_paginas_pdf is not None and n_paginas_pdf >= cfg.livro_completo_fracao * conteudo:
+    if n_paginas_pdf is not None and conteudo is not None and n_paginas_pdf >= cfg.livro_completo_fracao * conteudo:
         raise ExtracaoAmbigua(
             f"PDF com {n_paginas_pdf} páginas para um livro de {conteudo}: parece o livro completo. Envie só o sumário."
         )
@@ -176,6 +185,28 @@ def localizar_sumario(linhas: list[str]) -> tuple[int, list[str]] | None:
     return inicio, janela
 
 
+def sumario_sem_paginas(linhas: list[str]) -> list[Capitulo]:
+    """Capítulo por rótulo, subtópico por posição. A lista acaba no índice remissivo ou em texto corrido."""
+    capitulos: list[Capitulo] = []
+    corrente: Capitulo | None = None
+    for linha in linhas:
+        if FIM_DO_SUMARIO.match(linha) or (linha.endswith(".") and len(linha) >= cfg.paragrafo_min_chars):
+            break
+        if m := CAPITULO_SEM_PAGINA.match(linha):
+            corrente = Capitulo(num=int(m[1] or m[2]), titulo=m[3].strip(), pag_inicio=None, paginas=None)
+            capitulos.append(corrente)
+        elif MARCADOR.match(linha):
+            corrente = None  # apresentação, prefácio, parte, apêndice: não é capítulo nem subtópico dele
+        elif corrente:
+            corrente.subtopicos.append(linha)
+
+    if not capitulos:
+        raise ExtracaoAmbigua("Sumário encontrado, mas nenhum capítulo reconhecido (nem com nem sem número de página).")
+    if [c.num for c in capitulos] != list(range(capitulos[0].num, capitulos[0].num + len(capitulos))):
+        raise ExtracaoAmbigua("Numeração de capítulos com lacunas ou repetições.")
+    return capitulos
+
+
 def classificar_linhas(janela: list[str]) -> list[Entrada]:
     """Cada entrada: tipo (capitulo|marcador|subtopico), num, titulo, pag (None se romana)."""
     entradas: list[Entrada] = []
@@ -227,4 +258,4 @@ def fechar_paginas(entradas: list[Entrada]) -> tuple[list[Capitulo], int]:
         elif corrente:
             corrente.subtopicos.append(str(e["titulo"]))
 
-    return capitulos, fim - capitulos[0].pag_inicio
+    return capitulos, fim - capitulos[0].pag_inicio  # type: ignore[operator]

@@ -1,0 +1,72 @@
+"""Pesquisa de fatos: lógica pura (trechos, anti-alucinação, contagens divergentes). Sem web, sem LLM."""
+
+from src.pesquisa import CONTAGEM, PaginasEncontradas, TrechoWeb, trechos_de_texto, validar
+
+EDITORA = "https://editora.exemplo/livros/llms"
+LOJA = "https://loja.exemplo/produto/123"
+OUTRO = "https://rede.exemplo/post/9"
+FONTES = [
+    TrechoWeb(url=EDITORA, texto="ISBN impresso: 978-65-83913-08-1 Ano: 2026 Páginas: 344 Preço impresso: R$ 139,00"),
+    TrechoWeb(url=LOJA, texto="Número de páginas ‏ : ‎ 344 páginas ISBN-10 ‏ : ‎ 6583913089"),
+    TrechoWeb(url=OUTRO, texto="Recomendado. Livro 488 páginas. LLMs: As Partes Difíceis e mais três lançamentos"),
+]
+
+
+def achado(**kw: object) -> PaginasEncontradas:
+    base = {"mesmo_livro": True, "paginas_totais": 344, "url_fonte": EDITORA, "justificativa": "Ficha técnica da editora."}
+    return PaginasEncontradas.model_validate({**base, **kw})
+
+
+def test_trechos_guardam_so_a_ficha_em_volta_de_paginas():
+    corpo = "Capítulo sobre avaliação. " * 40  # texto longo sem contagem de páginas: não entra na base
+    html_txt = f"{corpo} Autor: Fulano ISBN: 978-65 Ano: 2026 Páginas: 344 Preço: R$ 139 {corpo} Página 1 de 1"
+    trechos = trechos_de_texto(EDITORA, html_txt)
+    assert len(trechos) == 1
+    assert "Páginas: 344" in trechos[0].texto
+    assert len(trechos[0].texto) < 300  # janela, não a página inteira
+
+
+def contagens(texto: str) -> list[int]:
+    return [int(m[1] or m[2]) for m in CONTAGEM.finditer(texto)]
+
+
+def test_contagem_le_formatos_reais_e_ignora_isbn():
+    assert contagens(FONTES[1].texto) == [344]  # "páginas : 344 páginas" é uma contagem só; não lê "10" de ISBN-10
+    assert contagens(FONTES[2].texto) == [488]
+    assert not contagens("Página 1 de 1")
+
+
+def test_ano_antes_do_rotulo_paginas_nao_e_contagem():
+    # Formato real da ficha de editora: o ano vem colado antes do rótulo "Páginas:".
+    assert contagens(FONTES[0].texto) == [344]
+
+
+def test_aceita_numero_escrito_na_fonte_citada_e_lista_divergencias():
+    p = validar(achado(), FONTES, n_capitulos=9)
+    assert (p.paginas_totais, p.url_fonte) == (344, EDITORA)
+    assert p.outras_contagens == ["488 páginas (rede.exemplo)"]
+    assert p.fontes_consultadas == sorted([EDITORA, LOJA, OUTRO])
+
+
+def test_descarta_numero_que_nao_esta_na_fonte_citada():
+    p = validar(achado(paginas_totais=350), FONTES, n_capitulos=9)  # modelo "inventou" 350
+    assert p.paginas_totais is None and "não está no trecho" in p.justificativa
+
+
+def test_descarta_numero_de_outra_fonte_que_nao_a_citada():
+    p = validar(achado(paginas_totais=488, url_fonte=EDITORA), FONTES, n_capitulos=9)  # 488 existe, mas não na editora
+    assert p.paginas_totais is None
+
+
+def test_descarta_url_que_nao_foi_consultada():
+    assert validar(achado(url_fonte="https://inventada.exemplo"), FONTES, n_capitulos=9).paginas_totais is None
+
+
+def test_respeita_quando_o_modelo_diz_que_nao_e_o_mesmo_livro():
+    p = validar(achado(mesmo_livro=False, justificativa="Os trechos são de outro livro."), FONTES, n_capitulos=9)
+    assert p.paginas_totais is None and p.justificativa == "Os trechos são de outro livro."
+
+
+def test_descarta_total_implausivel():
+    fontes = [TrechoWeb(url=EDITORA, texto="Páginas: 12")]
+    assert validar(achado(paginas_totais=12), fontes, n_capitulos=20).paginas_totais is None

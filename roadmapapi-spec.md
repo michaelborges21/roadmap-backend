@@ -4,15 +4,18 @@ API que gera cronogramas de estudo personalizados a partir de **sumários** de l
 
 ## Princípios não-negociáveis
 
-1. **LLM só julga, Python calcula.** Nenhuma aritmética sai do modelo.
+1. **LLM julga e pesquisa fatos com fonte; Python calcula.** Nenhuma aritmética sai do modelo.
+   Na pesquisa na web (2.9), o modelo só escolhe qual trecho é deste livro e transcreve o número;
+   o Python só aceita o número se ele estiver escrito no trecho da fonte citada.
 2. **Só sumário e capa.** Nunca o corpo do livro — nem no upload, nem no banco, nem no
    índice vetorial. Arquivo que contém capítulos inteiros é rejeitado ou tem só a seção
-   de sumário aproveitada (ver 2.1).
+   de sumário aproveitada (ver 2.1). Da web, só a ficha técnica em volta de "páginas" (2.9).
 3. **Código enxuto.** Sem repository pattern sobre SQLAlchemy, sem DTO que espelha model.
    Função de 3 linhas usada uma vez é inline.
 4. **Banco simples.** 3 tabelas. FK sempre `int` → `id`. Sem chave composta, sem tabela de
    junção, sem herança. Variabilidade vai pra JSONB.
 5. **Falha explícita.** Extração ambígua retorna `422`, nunca número silenciosamente errado.
+   Número estimado (páginas repartidas a partir de um total pesquisado) é marcado como tal no plano.
 
 ---
 
@@ -31,6 +34,7 @@ class Book(Base):
     paginas_fisicas: Mapped[int | None]                  # da ficha CIP, quando houver
     capitulos: Mapped[list] = mapped_column(JSONB, default=list)
     classificacao: Mapped[dict | None] = mapped_column(JSONB)
+    pesquisa: Mapped[dict | None] = mapped_column(JSONB)  # fatos da web com fonte (2.9)
 
 
 class Roadmap(Base):
@@ -47,7 +51,8 @@ class Chunk(Base):
     __tablename__ = "chunk"
     id: Mapped[int] = mapped_column(primary_key=True)
     book_id: Mapped[int] = mapped_column(ForeignKey("book.id"))
-    texto: Mapped[str]                                   # título do cap + subtópicos
+    texto: Mapped[str]                                   # trecho web em volta de "páginas" (ficha técnica)
+    fonte: Mapped[str]                                   # URL de origem do trecho
     embedding: Mapped[list[float]] = mapped_column(Vector(768))
 ```
 
@@ -59,6 +64,8 @@ class Chunk(Base):
   "subtopicos": ["O que É Aprendizado de Máquina?", "Tipos de Sistemas..."]}]
 ```
 
+Sumário sem paginação: `pag_inicio` e `paginas` ficam `null` até a pesquisa (2.9).
+
 **Decisões de schema:**
 
 - `hash_fonte` (não `hash_sumario`): a fonte pode ser capa, sumário, ou os dois. É o cache
@@ -68,9 +75,10 @@ class Chunk(Base):
 - `paginas_fisicas` vem da ficha CIP quando o PDF a inclui (ex.: "640 p."). Serve de
   sanidade: `paginas_conteudo` maior que `paginas_fisicas` é erro de extração.
 - JSONB para o que ainda vai mudar de formato. Tabela `Capitulo` normalizada = migration
-  a cada iteração por zero ganho de query.
+  a cada iteração por zero ganho de query. `pesquisa` também é JSONB pelo mesmo motivo.
 - FKs `int` simples, sem `relationship()` bidirecional, sem cascade. Chunks de um livro:
   `select(Chunk).where(Chunk.book_id == id)`.
+- `Chunk` é a base RAG de fatos pesquisados (4): um trecho de página web por linha, com a URL.
 - Sem `User` por enquanto. Entra com autenticação, como `roadmap.user_id`.
 
 **pgvector:** `CREATE EXTENSION vector;` na primeira migration. Índice `ivfflat` só acima de
@@ -82,7 +90,9 @@ class Chunk(Base):
 
 ```
 upload → localizar_sumario() → limpar_ruido() → classificar_linhas()
-       → fechar_paginas() → [cache hit?] → classificar_llm() → calcular() → cronograma()
+       → fechar_paginas() | sumario_sem_paginas() → [cache hit?]
+       → pesquisar() (web + RAG, 2.9) → distribuir_paginas() se o sumário não tem páginas
+       → classificar_llm() → calcular() → cronograma()
 ```
 
 ### 2.1 Localizar o sumário
@@ -108,6 +118,14 @@ completo" por `livro_completo_fracao` não se aplica; só a heurística de pará
 continua valendo). Markdown: `#`/`##`, `-`/`*`/`+` de lista e `*`/`_`/`` ` `` são removidos antes
 de classificar — mas `N. Título` de lista numerada é preservado, porque já é o próprio formato
 de rótulo que o parser espera.
+
+**Sumário sem paginação (2026-09-15):** se nenhuma linha da janela termina em página **arábica**
+(e-book, página de loja, texto digitado), `sumario_sem_paginas` lê as linhas depois da âncora:
+capítulo pelo mesmo rótulo sem a página, subtópico pela posição, e apresentação/prefácio/parte/
+apêndice como marcadores fora dos capítulos. A lista termina no índice remissivo ou numa linha de
+texto corrido (termina em ponto e tem ≥ `paragrafo_min_chars`). Os capítulos saem com `paginas`
+nulo — a extração nunca inventa página. (Uma janela só com "páginas" romanas não conta como
+paginada: título que termina em "mil" ou "civil" casa o padrão romano.)
 
 ### 2.2 Limpar ruído
 
@@ -136,7 +154,7 @@ CAPITULO = [  # case-insensitive
                                                         # "Capítulo 2 ■ ...", "Capítulo 2 ..."
     r"^(\d+)\s?\.\s+(.+?)\s+(\d+)$",                    # "2. Projeto ML... 28", "2 . Introdução... 27"
 ]
-MARCADOR = r"^(Parte\b|Pref[áa]cio\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)"  # case-insensitive
+MARCADOR = r"^(Parte\b|Pref[áa]cio\b|Apresenta[çc][ãa]o\b|Ap[êe]ndice|[A-Z]\.\s|[ÍI]ndice\b)"  # case-insensitive
 ```
 
 Antes de casar, a linha é normalizada: `U+FFFD` (glifo sem mapa unicode — vira tanto o
@@ -174,6 +192,8 @@ contagem, porque a página de abertura de parte não é conteúdo do capítulo a
 Validações que disparam `422`: sequência não crescente, capítulo sem fronteira final,
 `paginas_conteudo > paginas_fisicas`.
 
+Sumário sem paginação não passa por aqui: não há fronteira para fechar. As páginas vêm de 2.9.
+
 ### 2.5 Upload só de capa
 
 A capa fornece título, subtítulo, autor, edição e — quando o título nomeia uma linguagem —
@@ -189,8 +209,7 @@ com o livro criado e sinaliza que falta o sumário. Nunca inventa páginas.
 
 ### 2.6 LLM Classificador
 
-Único ponto onde o modelo é chamado. Structured output com JSON schema nativo, validado
-por Pydantic. Nada de parsear string.
+Structured output com JSON schema nativo, validado por Pydantic. Nada de parsear string.
 
 ```python
 class Classificacao(BaseModel):
@@ -271,6 +290,8 @@ O LLM julga o nível; a exclusão é Python. Livro inteiro abaixo do nível → 
 
 Constantes em `config.yaml`. Calibrar = mudar número, não reescrever prompt.
 
+`calcular` exige `cap.paginas`: sumário sem paginação passa antes por `distribuir_paginas` (2.9).
+
 ### 2.8 Cronograma
 
 ```python
@@ -281,12 +302,46 @@ dias_por_semana = min(7, ceil(disponibilidade / 2))   # ~2h por sessão
 Distribui capítulos nas semanas respeitando ordem, sem partir capítulo entre semanas
 não-adjacentes.
 
+### 2.9 Pesquisa de fatos na web (2026-09-15, [ADR 0004](specs/adr/0004-pesquisa-web-com-fatos-verificaveis.md))
+
+Roda na primeira geração de roadmap de cada livro; o resultado fica em `book.pesquisa` e é
+reaproveitado, como a classificação.
+
+**Fluxo** (o Python conduz; o modelo não decide quando buscar):
+
+1. SearXNG local (`docker-compose.yml`, sem chave) com `"<título> livro número de páginas"`.
+2. Snippets dos resultados + download das primeiras páginas (`pesquisa.paginas_baixadas`), texto
+   visível completo via `trafilatura.html2txt` — `extract()` descarta a ficha técnica da editora.
+3. Só janelas de texto em volta de "páginas" que trazem uma contagem vão para a base RAG (4).
+4. Os trechos mais próximos da consulta vão ao `gemma4:12b`, que responde `PaginasEncontradas`
+   (`mesmo_livro`, `paginas_totais` transcrito, `url_fonte`, `justificativa`). O prompt proíbe
+   calcular e estimar.
+5. **Validação Python:** o número só vale se `mesmo_livro`, se está escrito no trecho da URL
+   citada e se é plausível (≥ nº de capítulos). Senão, `paginas_totais` nulo com o motivo.
+6. Contagens diferentes vistas nos trechos (`outras_contagens`) viram aviso no plano. Caso real
+   medido: editora e livraria com 344; um post com 488; outro livro de título parecido com 448.
+
+**Uso:**
+
+- Sumário **sem paginação**: `distribuir_paginas` reparte o total na proporção de 1 + nº de
+  subtópicos, pelo maior resto (soma exata). O plano registra `paginas.origem = "pesquisa"`, a
+  URL e a regra. O total inclui páginas pré e pós-textuais, então tende a superestimar.
+- Sumário **com paginação**: vale o sumário; a pesquisa só confere (aviso se o sumário soma mais
+  que o total pesquisado).
+
+**Falhas:** sem páginas e sem fonte confiável → `422`. SearXNG fora do ar → `503` se o livro
+depende da pesquisa; aviso no plano se o sumário é paginado. Página que bloqueia robô é pulada.
+
+**Catálogos fora da v1:** Google Books sem chave estava com a cota anônima esgotada e a Open
+Library não tinha a tradução brasileira testada. Reavaliar o Google Books com chave gratuita
+(checkpoint 6).
+
 ---
 
 ## 3. Harness de avaliação
 
 `tests/eval/` — LLM real, **fora do CI padrão** (`pytest -m eval` ou job nightly).
-CI normal roda com classificador mockado.
+CI normal roda com classificador, web e embedding mockados.
 
 ### Testes de extração (determinísticos, sem LLM)
 
@@ -299,6 +354,7 @@ CI normal roda com classificador mockado.
 | Front matter | prefácio em romano e em arábico ficam ambos fora da conta |
 | Capa isolada | gera `Book` com `capitulos=[]`, sem inventar páginas |
 | Sanidade CIP | `paginas_conteudo <= paginas_fisicas` |
+| Sem paginação | capítulos e subtópicos reconhecidos, `paginas` nulo |
 
 ### Property tests (com LLM)
 
@@ -311,6 +367,12 @@ CI normal roda com classificador mockado.
 | Baixo nível | sumário com C/Rust/Assembly ⇒ `baixo_nivel == 1.3` |
 | Coerência aritmética | `semanas * disponibilidade >= total_horas` |
 | Variância | N=10 mesmo input ⇒ desvio padrão < 15% |
+
+### Pesquisa (com web e LLM reais)
+
+| Propriedade | Assert |
+|---|---|
+| Fato verificado | livro real sem paginação ⇒ total de páginas encontrado, com `url_fonte` entre as fontes consultadas |
 
 ### Golden set
 
@@ -328,39 +390,28 @@ CI normal roda com classificador mockado.
 
 Baseline em `evals/baseline.json`. Toda mudança de prompt ou constante compara contra ele.
 
+**Estado (2026-09-15):** os arquivos do golden set e `evals/baseline.json` foram removidos a
+pedido do usuário. Os testes que dependem deles pulam ("fixture ausente"); `test_baseline`
+regrava a baseline na próxima rodada de eval com um golden set novo.
+
 ---
 
 ## 4. RAG
 
-Entra **depois** do harness verde. Sem baseline não há como provar melhora.
+Base de fatos pesquisados na web, por livro (2026-09-15, [ADR 0004](specs/adr/0004-pesquisa-web-com-fatos-verificaveis.md)).
+Substitui o RAG de referências entre capítulos de outros livros, que não passou no critério de
+aceite e foi removido do código ([ADR 0003](specs/adr/0003-rag-nao-aceito.md): variância 8,1% sem,
+0,0% com, 0,9% no controle — o ganho vinha do texto extra no prompt, não da busca).
 
-- Chunk = título do capítulo + `subtopicos` (1 chunk por capítulo). Nunca corpo do livro.
-  Criado na primeira classificação do livro.
+- Chunk = janela de texto de página web em volta de "páginas" que traz uma contagem, com a URL
+  em `fonte`. Nunca corpo de livro.
 - Embedding local via Ollama: `embeddinggemma` (checkpoint 1) — multilíngue, 768 dim, 2048
-  tokens; prefixo de similaridade simétrica em `config.yaml` (`rag.prefixo`).
-- Uso: alimentar o Classificador com contexto real em vez de inferência pelo título. O
-  sumário do próprio livro o classificador já vê inteiro; o contexto novo são **capítulos
-  parecidos de outros livros já classificados**, com o `nivel` e o `peso` que receberam
-  (top `referencias_por_capitulo`, acima de `similaridade_min`), como referência de calibração.
-- Chave de liga: `rag.ativo` em `config.yaml`, `false` até passar no critério de aceite.
-  Desligado, o prompt é idêntico ao da baseline.
-- Medição: `tests/eval/test_rag.py` monta referências leave-one-out do golden set numa
-  transação desfeita no fim, compara variância com e sem RAG e grava `evals/rag.json`.
+  tokens; prefixos de recuperação (documento × consulta) em `config.yaml` (`pesquisa`).
+- Uso: entregar ao modelo, na pesquisa de fatos (2.9), os trechos mais relevantes já coletados.
+  Na segunda vez para o mesmo livro, a base é reaproveitada e a web não é consultada.
+- Banco: pgvector no Postgres do projeto — sem banco vetorial separado.
 - `GET /roadmaps/{id}/explicar?capitulo=N`: recupera texto do capítulo + `fatores`
   persistidos (ou o motivo da exclusão), LLM redige a explicação via structured output.
-
-**Critério de aceite:** variância do golden set cai (CV das horas com RAG < CV sem RAG, mesmo
-N). Se não cair, RAG não vai pra produção.
-
-O critério alternativo "`tipo_livro` bate mais com julgamento humano" foi descartado
-(2026-09-14): o julgamento depende de quanto a pessoa conhece cada livro — de um ela leu, de
-outro só ouviu falar — então não é uma referência estável.
-
-**Resultado (2026-09-14): RAG não aceito, `rag.ativo` segue `false`.** Na Huyen (N=5), a
-variância foi 8,1% sem RAG e 0,0% com RAG, mas só 1 de 10 capítulos recebeu referência.
-O controle — nota de referências no prompt, nenhuma referência — deu 0,9%: o ganho vinha
-do texto extra no prompt, não da busca. Com só 6 livros de áreas diferentes, 10 de 109
-capítulos têm vizinho acima de 0,78; reavaliar quando o corpus crescer.
 
 ---
 
@@ -370,6 +421,7 @@ capítulos têm vizinho acima de 0,78; reavaliar quando o corpus crescer.
 - Autenticação e persistência de progresso.
 - OCR de capa: **decidido** (checkpoint 4, 2026-09-14) — modelo de visão local
   (`gemma4:12b`), não campo de título digitado. Implementado (§2.5).
+- Pesquisa na web: **em escopo** desde 2026-09-15 (§2.9), só com ferramentas gratuitas e locais.
 
 ---
 
@@ -379,7 +431,7 @@ O desenvolvimento **para e consulta** nestes pontos:
 
 1. **Escolha do modelo Ollama** (classificador e embedding) — avisar antes de fixar
    qualquer modelo, para pesquisa prévia.
-   **Decidido (2026-09-14):** `gemma4:12b` (classificador, visão, explicação) e
+   **Decidido (2026-09-14):** `gemma4:12b` (classificador, visão, explicação, pesquisa) e
    `embeddinggemma` (embedding) — ver `specs/adr/`.
 2. **Antes de rodar testes com LLM real** — avisar para troca de modelo/esforço do lado
    Anthropic.
@@ -389,6 +441,8 @@ O desenvolvimento **para e consulta** nestes pontos:
    (custo: 4 segundos de UX). PDF de capa com camada de texto não precisa de visão.
    **Decidido (2026-09-14):** modelo de visão local, `gemma4:12b` — ver seção 5.
 5. **Criar tabela nova ou adicionar FK.**
+6. **Fonte de pesquisa que exige chave, cadastro ou custo** (ex.: Google Books com chave, APIs
+   de SERP) — não há orçamento para serviço pago.
 
 ---
 
@@ -400,3 +454,4 @@ O desenvolvimento **para e consulta** nestes pontos:
 4. Property tests com LLM + baseline
 5. RAG, medido contra o baseline
 6. Specs formais em `specs/` + ADR "por que a aritmética não é do LLM"
+7. Pesquisa de fatos na web (2.9) + RAG como base de fatos (4) — 2026-09-15

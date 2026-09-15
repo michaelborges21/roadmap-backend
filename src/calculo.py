@@ -1,4 +1,4 @@
-"""Calculadora e cronograma (spec 2.7–2.8). Python puro e determinístico."""
+"""Calculadora e cronograma (spec 2.7–2.9). Python puro e determinístico."""
 
 from math import ceil
 from typing import Literal
@@ -13,6 +13,11 @@ Senioridade = Literal["Junior", "Pleno", "Senior"]
 NIVEIS: list[Nivel] = ["iniciante", "intermediario", "avancado"]
 SENIORIDADES: list[Senioridade] = ["Junior", "Pleno", "Senior"]
 EPS = 1e-9
+REGRA_DISTRIBUICAO = (
+    "Sumário sem paginação: o total de páginas pesquisado foi repartido entre os capítulos na proporção "
+    "de 1 + nº de subtópicos. O total inclui páginas pré e pós-textuais, então as horas tendem a sair "
+    "um pouco acima do real."
+)
 
 calc = config.calculo
 
@@ -28,6 +33,7 @@ class HorasCapitulo(BaseModel):
     num: int
     titulo: str
     nivel: Nivel
+    paginas: int | None = None  # None em roadmaps criados antes deste campo
     leitura: float
     codigo: float
     escrita: float
@@ -52,6 +58,13 @@ class Semana(BaseModel):
     capitulos: list[Trecho] = []
 
 
+class OrigemPaginas(BaseModel):
+    origem: Literal["sumario", "pesquisa"]
+    paginas_totais: int | None = None
+    url_fonte: str | None = None
+    regra: str | None = None
+
+
 class Plano(BaseModel):
     senioridade: Senioridade
     disponibilidade_horas: float
@@ -61,9 +74,25 @@ class Plano(BaseModel):
     capitulos: list[HorasCapitulo]
     excluidos: list[Excluido]
     cronograma: list[Semana]
+    paginas: OrigemPaginas | None = None  # None em roadmaps criados antes da pesquisa de fatos
+    avisos: list[str] = []
+
+
+def distribuir_paginas(capitulos: list[Capitulo], paginas_totais: int) -> list[Capitulo]:
+    """Sumário sem paginação (spec 2.9): reparte o total pesquisado na proporção de 1 + nº de subtópicos."""
+    pesos = [1 + len(c.subtopicos) for c in capitulos]
+    brutos = [paginas_totais * p / sum(pesos) for p in pesos]
+    inteiros = [int(b) for b in brutos]
+    # Maior resto: a soma dos capítulos fecha exatamente no total.
+    maiores_restos = sorted(range(len(brutos)), key=lambda i: brutos[i] - inteiros[i], reverse=True)
+    for i in maiores_restos[: paginas_totais - sum(inteiros)]:
+        inteiros[i] += 1
+    return [c.model_copy(update={"paginas": max(1, n)}) for c, n in zip(capitulos, inteiros)]
 
 
 def calcular(cap: Capitulo, cls: Classificacao, senioridade: Senioridade) -> HorasCapitulo:
+    if cap.paginas is None:
+        raise ValueError(f"Capítulo {cap.num} sem páginas: distribua o total pesquisado antes de calcular.")
     julgado = next(j for j in cls.capitulos if j.num == cap.num)
     gap = calc.fator_gap if NIVEIS.index(cls.nivel_natural) > SENIORIDADES.index(senioridade) else 1.0
     baixo = calc.fator_baixo_nivel if calc.baixo_nivel & {l.lower() for l in cls.linguagens} else 1.0
@@ -76,6 +105,7 @@ def calcular(cap: Capitulo, cls: Classificacao, senioridade: Senioridade) -> Hor
         num=cap.num,
         titulo=cap.titulo,
         nivel=julgado.nivel,
+        paginas=cap.paginas,
         leitura=leitura,
         codigo=codigo,
         escrita=escrita,

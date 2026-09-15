@@ -12,7 +12,6 @@ from src.classificador import (
     Classificacao,
     Explicacao,
     LLMIndisponivel,
-    Referencia,
     RespostaLLMInvalida,
     classificar,
     explicar,
@@ -86,19 +85,6 @@ async def test_sem_modelo_configurado(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(classificador.config.llm, "modelo_classificador", None)
     with pytest.raises(LLMIndisponivel, match="não configurado"):
         await classificar("Programando em C", CAPS)
-
-
-@pytest.mark.asyncio
-async def test_referencias_rag_entram_no_prompt_so_quando_existem(llm: Callable[[dict], list[dict]]):
-    chamadas = llm(VALIDA)
-    refs = {2: [Referencia(livro="Outro livro", capitulo="Ponteiros e memória", nivel="avancado", peso=1.5, similaridade=0.9)]}
-    await classificar("Programando em C", CAPS, refs)
-    usuario = chamadas[0]["messages"][1]["content"]  # type: ignore[index]
-    assert '≈ parecido com "Ponteiros e memória" (Outro livro): avancado, peso 1.5' in usuario
-
-    sem_refs = llm(VALIDA)
-    await classificar("Programando em C", CAPS)
-    assert "≈" not in sem_refs[0]["messages"][1]["content"]  # type: ignore[index]  # prompt idêntico ao da baseline
 
 
 @pytest.mark.asyncio

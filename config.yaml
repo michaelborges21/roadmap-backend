@@ -10,6 +10,7 @@ extracao:
   # ...considerando só as N primeiras/últimas linhas de cada página.
   ruido_linhas_borda: 4
   # Sem âncora: texto com >= N linhas longas sem número de página é corpo de livro.
+  # Sumário sem paginação: linha terminada em ponto com >= N caracteres encerra a lista.
   paragrafo_min_chars: 60
   paragrafos_min: 10
 
@@ -25,27 +26,32 @@ calculo:
   horas_por_sessao: 2
 
 llm:
-  # Checkpoint 1 (2026-09-14): Gemma 4 12B nos dois papéis — um modelo só na VRAM de 12GB.
-  # qwen2.5vl:7b foi testado antes e falhou: 99s e resposta fora do schema no Richards.
-  # Vazio → API responde 503.
+  # Checkpoint 1 (2026-09-14): Gemma 4 12B classifica, lê capa, explica e escolhe a fonte na
+  # pesquisa — um modelo só na VRAM de 12GB. qwen2.5vl:7b foi testado antes e falhou: 99s e
+  # resposta fora do schema num sumário de 27 capítulos. Vazio → API responde 503.
   modelo_classificador: gemma4:12b
   modelo_visao: gemma4:12b
-  # Multilíngue (sumários em português), 768 dim, 2048 tokens (maior chunk medido: ~580).
+  # Multilíngue (sumários e páginas web em português), 768 dim, 2048 tokens.
   modelo_embedding: embeddinggemma
   temperature: 0
-  # Defaults do Ollama são armadilha: num_ctx automático pode ser menor que um sumário real,
+  # Defaults do Ollama são armadilha: num_ctx automático pode ser menor que o prompt,
   # e sem num_predict/timeout a requisição pode nunca voltar.
   num_ctx: 16384
   num_predict: 4096
   timeout_s: 180
 
-rag:
-  # Experimental (spec 4): só vai a true se a medição contra a baseline mostrar ganho.
-  ativo: false
-  # Prompt de similaridade simétrica do embeddinggemma (capítulo × capítulo).
-  prefixo: "task: sentence similarity | query: "
-  referencias_por_capitulo: 2
-  # Checkpoint 3 (2026-09-14): abaixo disso a referência não entra no prompt. Medido no golden
-  # set: melhor vizinho entre livros vai de 0,67 a 0,84 (mediana 0,73 = assunto só vagamente
-  # parecido; ~0,82 = mesmo assunto). 0.6 deixava passar todos os capítulos.
-  similaridade_min: 0.78
+# Pesquisa de fatos na web (spec 2.9, ADR 0004). Operacional, não é calibração de horas.
+pesquisa:
+  # Resultados do SearXNG considerados (o snippet de cada um já é fonte).
+  resultados_web: 10
+  # Desses, quantas páginas são baixadas por inteiro (editora e livrarias costumam vir primeiro).
+  paginas_baixadas: 5
+  timeout_s: 20
+  # Trechos recuperados da base RAG e entregues ao modelo.
+  trechos_consulta: 8
+  # Caracteres guardados antes e depois de "páginas": ficha técnica cabe, corpo de livro não.
+  janela_antes: 150
+  janela_depois: 80
+  # Prompts de recuperação do embeddinggemma (documento × consulta).
+  prefixo_documento: "title: none | text: "
+  prefixo_consulta: "task: search result | query: "
