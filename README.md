@@ -12,6 +12,29 @@ Nenhuma conta sai do modelo.
 - Requisitos (cada um ligado ao teste que o verifica): [`specs/requisitos.md`](specs/requisitos.md)
 - Contrato HTTP: [`specs/api.md`](specs/api.md)
 - Decisões de arquitetura: [`specs/adr/`](specs/adr/)
+- Diagramas (ER, classes, sequência) e explicação de cada módulo: [`docs/arquitetura.html`](docs/arquitetura.html)
+
+## Estrutura do projeto
+
+```
+roadmap-backend/
+├── src/                  # código de produção — API, extração, LLM, cálculo (ver docs/arquitetura.html)
+├── tests/                # suíte padrão (LLM/web/embedding mockados) + tests/eval/ (LLM e web reais)
+├── migrations/           # histórico de schema do Alembic
+├── specs/                # requisitos rastreados a teste, contrato HTTP e ADRs (specs/adr/)
+├── evals/                # calibração das constantes de config.yaml contra estudo real
+├── static/               # interface de teste manual (HTML+JS puro), servida em GET /
+├── searxng/              # configuração do sidecar de busca (docker-compose.yml)
+├── docs/                 # documentação técnica complementar (diagramas, troubleshooting de ambiente)
+├── config.yaml           # constantes de cálculo, prompts de LLM e parâmetros de pesquisa
+├── docker-compose.yml    # sidecars: Postgres+pgvector, Ollama, SearXNG
+├── pyproject.toml        # dependências, gerenciadas só via `uv add`
+└── roadmapapi-spec.md    # especificação funcional completa
+```
+
+Cada arquivo `.py` de `src/` corresponde a um estágio do pipeline (extração → pesquisa web →
+classificação → cálculo) ou a uma fronteira de infraestrutura (config, banco, modelos) — o porquê
+de não haver subpastas dentro de `src/` está detalhado em [`docs/arquitetura.html`](docs/arquitetura.html).
 
 ## Pré-requisitos
 
@@ -96,8 +119,8 @@ uv run pytest            # suíte padrão: sem LLM, sem GPU, sem internet (~8s)
 uv run pytest -m eval    # modelo e web reais (~5 min); ATUALIZAR_BASELINE=1 regrava evals/baseline.json
 ```
 
-Os testes de extração usam PDFs reais em `test_files/`, **fora do git** (são PDFs de editora).
-Sem esses arquivos, esses testes pulam.
+Os testes de extração usam PDFs reais em `test_files/` (criar a pasta na raiz do projeto),
+**fora do git** (são PDFs de editora). Sem esses arquivos, esses testes pulam.
 
 Diário de estudo para calibrar as horas: anote em `evals/estudo.csv` e rode
 `uv run python -m evals.comparar_estudo`.

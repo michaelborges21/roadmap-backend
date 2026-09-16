@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>roadmapAPI — Documentação Técnica</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef1f4;
+    --surface: #ffffff;
+    --surface-2: #e4e9ee;
+    --ink: #1a2230;
+    --muted: #57647a;
+    --faint: #8390a3;
+    --accent: #2f5f8f;
+    --accent-soft: rgba(47,95,143,.10);
+    --accent-ink: #1d3f5e;
+    --line: #ccd4dd;
+    --amber: #8a5f1c;
+    --amber-soft: rgba(138,95,28,.12);
+    --rose: #9a3b46;
+    --rose-soft: rgba(154,59,70,.10);
+    --code-bg: #e4e9ee;
+    --shadow: 0 1px 2px rgba(20,30,45,.06), 0 8px 24px rgba(20,30,45,.05);
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10151d;
+      --surface: #171e28;
+      --surface-2: #1d2530;
+      --ink: #e6ebf1;
+      --muted: #93a0b3;
+      --faint: #647184;
+      --accent: #7db2e8;
+      --accent-soft: rgba(125,178,232,.14);
+      --accent-ink: #cfe4fa;
+      --line: #2a3441;
+      --amber: #d3a35a;
+      --amber-soft: rgba(211,163,90,.14);
+      --rose: #e08a92;
+      --rose-soft: rgba(224,138,146,.12);
+      --code-bg: #1d2530;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 28px rgba(0,0,0,.35);
+    }
+  }
+  /* Página estática sem botão de tema: só a preferência do SO decide (bloco acima). */
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  code, .mono { font-family: var(--mono); }
+  h1, h2, h3 { font-family: var(--serif); text-wrap: balance; color: var(--ink); }
+  a { color: var(--accent); }
+
+  .shell { display: flex; max-width: 1280px; margin: 0 auto; align-items: flex-start; }
+
+  /* ---- TOC lateral ---- */
+  nav.toc {
+    position: sticky; top: 0; align-self: flex-start;
+    width: 250px; flex-shrink: 0; height: 100vh; overflow-y: auto;
+    padding: 28px 18px 40px 28px; border-right: 1px solid var(--line);
+  }
+  nav.toc .brand {
+    font-family: var(--serif); font-weight: 700; font-size: 1.05rem;
+    margin-bottom: 2px;
+  }
+  nav.toc .brand small { display: block; font-family: var(--sans); font-weight: 400; color: var(--muted); font-size: .72rem; margin-top: 3px; }
+  nav.toc ol { list-style: none; margin: 20px 0 0; padding: 0; counter-reset: sec; }
+  nav.toc ol > li { counter-increment: sec; margin-bottom: 3px; }
+  nav.toc a {
+    display: block; text-decoration: none; color: var(--muted); font-size: .82rem;
+    padding: 5px 8px; border-radius: 6px; position: relative;
+  }
+  nav.toc a::before {
+    content: counter(sec, decimal-leading-zero); font-family: var(--mono); font-size: .7rem;
+    color: var(--faint); margin-right: 7px;
+  }
+  nav.toc a:hover { background: var(--accent-soft); color: var(--accent-ink); }
+  nav.toc .sub { list-style: none; margin: 2px 0 8px 26px; padding: 0; }
+  nav.toc .sub li a { font-size: .76rem; padding: 3px 8px; }
+  nav.toc .sub li a::before { content: "–"; margin-right: 6px; }
+
+  main { flex: 1; min-width: 0; padding: 44px 48px 120px; max-width: 900px; }
+
+  header.title {
+    margin-bottom: 44px; padding-bottom: 28px; border-bottom: 1px solid var(--line);
+  }
+  header.title .eyebrow {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  header.title h1 { font-size: 2.1rem; font-weight: 700; margin: 0 0 10px; line-height: 1.15; }
+  header.title p { color: var(--muted); max-width: 62ch; font-size: 1rem; margin: 0; }
+
+  section { margin-bottom: 56px; scroll-margin-top: 24px; }
+  section h2 {
+    font-size: 1.4rem; font-weight: 600; margin: 0 0 6px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section h2 .num { font-family: var(--mono); font-size: .85rem; color: var(--faint); font-weight: 400; }
+  section > .lede { color: var(--muted); max-width: 68ch; margin: 0 0 22px; font-size: .95rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 28px 0 10px; }
+  h3 code { font-size: .9em; }
+  p { max-width: 70ch; }
+  p.note { color: var(--muted); font-size: .88rem; max-width: 68ch; }
+
+  code.inline, p code, li code, td code {
+    font-family: var(--mono); font-size: .87em; background: var(--code-bg);
+    padding: .1em .38em; border-radius: 4px; color: var(--accent-ink);
+  }
+
+  /* ---- diagram frame ---- */
+  .diagram {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; margin: 18px 0; box-shadow: var(--shadow); overflow-x: auto;
+  }
+  .diagram .cap { font-family: var(--mono); font-size: .72rem; color: var(--faint); margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+
+  /* ---- module cards ---- */
+  .module {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 22px; margin: 16px 0; box-shadow: var(--shadow);
+  }
+  .module-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .module-head .file {
+    font-family: var(--mono); font-weight: 600; font-size: .95rem; color: var(--accent-ink);
+  }
+  .module-head .lines { font-family: var(--mono); font-size: .72rem; color: var(--faint); }
+  .module .role { color: var(--muted); font-size: .88rem; margin: 4px 0 14px; }
+  .module .deps { font-size: .78rem; color: var(--faint); margin-bottom: 14px; font-family: var(--mono); }
+  .module .deps b { color: var(--muted); font-family: var(--sans); font-weight: 500; }
+  .entity-grid { display: grid; gap: 10px; }
+  .entity {
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2);
+  }
+  .entity .name { font-family: var(--mono); font-weight: 600; font-size: .86rem; color: var(--ink); }
+  .entity .kind {
+    font-family: var(--mono); font-size: .64rem; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; margin-left: 8px;
+  }
+  .entity .members { margin: 6px 0 0; font-size: .82rem; color: var(--muted); }
+  .entity .members div { padding: 1px 0; }
+  .entity .members code { background: none; padding: 0; color: var(--muted); }
+  .entity .members .fn { color: var(--accent-ink); }
+
+  /* ---- routes ---- */
+  .route {
+    display: grid; grid-template-columns: 60px 1fr; gap: 14px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; background: var(--surface);
+  }
+  .route .verb {
+    font-family: var(--mono); font-weight: 600; font-size: .74rem; text-align: center;
+    padding: 4px 0; border-radius: 6px; height: fit-content; align-self: start;
+  }
+  .verb.get { background: var(--accent-soft); color: var(--accent-ink); }
+  .verb.post { background: var(--amber-soft); color: var(--amber); }
+  .route .path { font-family: var(--mono); font-weight: 600; font-size: .92rem; }
+  .route .desc { color: var(--muted); font-size: .86rem; margin-top: 4px; }
+  .route .codes { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .route .codes span {
+    font-family: var(--mono); font-size: .68rem; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .route .codes span.ok { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+  .route .codes span.err { color: var(--rose); border-color: var(--rose); background: var(--rose-soft); }
+
+  /* ---- table ---- */
+  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; background: var(--surface); }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); background: var(--surface-2); }
+  tr:last-child td { border-bottom: none; }
+  td.path { font-family: var(--mono); font-size: .82rem; color: var(--accent-ink); white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; }
+
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0;
+    padding: 12px 16px; font-size: .9rem; color: var(--ink); margin: 16px 0; max-width: 68ch;
+  }
+  .callout b { color: var(--accent-ink); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+
+  footer.page {
+    border-top: 1px solid var(--line); margin-top: 60px; padding-top: 20px;
+    color: var(--faint); font-size: .78rem; font-family: var(--mono);
+  }
+
+  @media (max-width: 980px) {
+    nav.toc { display: none; }
+    main { padding: 32px 20px 100px; max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="brand">roadmapAPI<small>documentação técnica</small></div>
+    <ol>
+      <li><a href="#er">Modelo de dados (ER)</a></li>
+      <li><a href="#classes">Diagrama de classes</a></li>
+      <li><a href="#sequencia">Diagrama de sequência</a></li>
+      <li><a href="#modulos">Módulos Python</a>
+        <ul class="sub">
+          <li><a href="#mod-config">config.py</a></li>
+          <li><a href="#mod-db">db.py</a></li>
+          <li><a href="#mod-models">models.py</a></li>
+          <li><a href="#mod-extracao">extracao.py</a></li>
+          <li><a href="#mod-classificador">classificador.py</a></li>
+          <li><a href="#mod-pesquisa">pesquisa.py</a></li>
+          <li><a href="#mod-calculo">calculo.py</a></li>
+          <li><a href="#mod-main">main.py</a></li>
+        </ul>
+      </li>
+      <li><a href="#rotas">Rotas HTTP</a></li>
+      <li><a href="#pasta-unica">Por que uma pasta só</a></li>
+      <li><a href="#diretorios">Diretórios e arquivos não-Python</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="title">
+      <div class="eyebrow">roadmap-backend · referência de arquitetura</div>
+      <h1>Como o roadmapAPI é montado por dentro</h1>
+      <p>Mapa completo do sistema que transforma o sumário de um livro técnico num cronograma de estudo:
+      o esquema do banco, as classes envolvidas, o fluxo de uma chamada de ponta a ponta, o papel de
+      cada arquivo <code>.py</code> e de cada arquivo que não é código, e as rotas expostas pela API.</p>
+    </header>
+
+    <!-- 1. ER -->
+    <section id="er">
+      <h2><span class="num">01</span>Modelo de dados (ER)</h2>
+      <p class="lede">Três tabelas, como manda o <code>CLAUDE.md</code>: <code>book</code> guarda o que foi extraído e
+      julgado sobre o livro; <code>roadmap</code> guarda um plano gerado para uma senioridade e disponibilidade; <code>chunk</code>
+      guarda os trechos da web usados para achar o número de páginas. Tudo que muda de formato entre
+      livros — capítulos, classificação, pesquisa, plano — fica em JSONB, não em tabela própria.</p>
+
+      <div class="diagram">
+<pre class="mermaid">
+erDiagram
+    BOOK {
+        int id PK
+        string hash_fonte UK "sha256 do arquivo enviado"
+        string titulo
+        string origem "sumario | capa"
+        int paginas_conteudo "nullable"
+        int paginas_fisicas "nullable, da ficha CIP"
+        jsonb capitulos "lista de capitulos"
+        jsonb classificacao "nullable, saida do LLM"
+        jsonb pesquisa "nullable, fatos da web com fonte"
+    }
+    ROADMAP {
+        int id PK
+        int book_id FK
+        string senioridade "Junior | Pleno | Senior"
+        float disponibilidade_horas
+        jsonb plano "cronograma + fatores aplicados"
+        datetime criado_em
+    }
+    CHUNK {
+        int id PK
+        int book_id FK
+        string texto "trecho web em volta de paginas"
+        string fonte "URL de origem"
+        vector embedding "768 dim, pgvector"
+    }
+    BOOK ||--o{ ROADMAP : "gera N planos"
+    BOOK ||--o{ CHUNK : "acumula trechos pesquisados"
+</pre>
+        <div class="cap">FK simples <code>int → id</code>, sem chave composta, sem tabela de junção. <code>hash_fonte</code> é o cache entre uploads: mesmo arquivo, mesmo <code>book.id</code>.</div>
+      </div>
+
+      <div class="callout">
+        <b>Por que JSONB e não tabela normalizada:</b> capítulos, classificação e pesquisa mudam de
+        formato a cada iteração da spec. Uma tabela <code>Capitulo</code> própria seria uma migration
+        a cada ajuste, por zero ganho de query — os capítulos de um livro sempre são lidos juntos,
+        nunca filtrados por campo interno.
+      </div>
+    </section>
+
+    <!-- 2. Class diagram -->
+    <section id="classes">
+      <h2><span class="num">02</span>Diagrama de classes (UML)</h2>
+      <p class="lede">Os modelos Pydantic que atravessam o pipeline — da extração do PDF até o plano final —
+      mais os três modelos SQLAlchemy persistidos. As setas pontilhadas marcam "usa/valida contra"; as
+      cheias marcam composição (a classe é dona da lista).</p>
+
+      <div class="diagram">
+<pre class="mermaid">
+classDiagram
+    class Capitulo {
+        +int num
+        +str titulo
+        +int? pag_inicio
+        +int? paginas
+        +list~str~ subtopicos
+    }
+    class Extraido {
+        +str titulo
+        +str origem
+        +int? paginas_conteudo
+        +int? paginas_fisicas
+        +list~Capitulo~ capitulos
+    }
+    class CapituloClassificado {
+        +int num
+        +Nivel nivel
+        +float peso
+    }
+    class Classificacao {
+        +TipoLivro tipo_livro
+        +Densidade densidade
+        +Nivel nivel_natural
+        +list~str~ linguagens
+        +list~CapituloClassificado~ capitulos
+    }
+    class Capa {
+        +str titulo
+        +str? subtitulo
+        +str? autor
+        +str? edicao
+    }
+    class PaginasEncontradas {
+        +bool mesmo_livro
+        +int? paginas_totais
+        +str? url_fonte
+        +list~int~ trechos_deste_livro
+        +str justificativa
+    }
+    class Pesquisa {
+        +int? paginas_totais
+        +str? url_fonte
+        +str justificativa
+        +list~str~ fontes_consultadas
+        +list~str~ outras_contagens
+    }
+    class Fatores {
+        +float senioridade
+        +float gap
+        +float baixo_nivel
+        +float peso
+    }
+    class HorasCapitulo {
+        +int num
+        +Nivel nivel
+        +int? paginas
+        +float leitura
+        +float codigo
+        +float escrita
+        +float total
+        +Fatores fatores
+    }
+    class Plano {
+        +Senioridade senioridade
+        +float total_horas
+        +int semanas
+        +list~HorasCapitulo~ capitulos
+        +list~Excluido~ excluidos
+        +list~Semana~ cronograma
+        +OrigemPaginas? paginas
+        +list~str~ avisos
+    }
+    class Book {
+        <<SQLAlchemy>>
+        +int id
+        +str hash_fonte
+        +str titulo
+        +jsonb capitulos
+        +jsonb classificacao
+        +jsonb pesquisa
+    }
+    class Roadmap {
+        <<SQLAlchemy>>
+        +int id
+        +int book_id
+        +jsonb plano
+    }
+    class Chunk {
+        <<SQLAlchemy>>
+        +int id
+        +int book_id
+        +vector embedding
+    }
+
+    Extraido *-- Capitulo : capitulos
+    Classificacao *-- CapituloClassificado : capitulos
+    Plano *-- HorasCapitulo : capitulos
+    HorasCapitulo *-- Fatores : fatores
+    Book ..> Extraido : serializa/desserializa
+    Book ..> Classificacao : campo classificacao
+    Book ..> Pesquisa : campo pesquisa
+    Roadmap ..> Plano : campo plano
+    Roadmap "N" --> "1" Book : book_id
+    Chunk "N" --> "1" Book : book_id
+    PaginasEncontradas ..> Pesquisa : validar()
+</pre>
+        <div class="cap">Nenhuma dessas classes é ORM além de Book/Roadmap/Chunk — as demais são <code>pydantic.BaseModel</code> puro, sem tabela própria; viram JSONB dentro de Book/Roadmap.</div>
+      </div>
+    </section>
+
+    <!-- 3. Sequence diagram -->
+    <section id="sequencia">
+      <h2><span class="num">03</span>Diagrama de sequência (UML)</h2>
+      <p class="lede">O caminho mais completo do sistema: gerar o roadmap de um livro cujo sumário não tem
+      número de página, na primeira vez (cache vazio) — dispara pesquisa na web, grava a base RAG e só
+      então classifica e calcula.</p>
+
+      <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    actor U as Usuário
+    participant API as main.py
+    participant DB as Postgres (book/roadmap/chunk)
+    participant PES as pesquisa.py
+    participant SX as SearXNG
+    participant WEB as Sites (editora/livraria)
+    participant OLL as Ollama (gemma4:12b / embeddinggemma)
+    participant CLS as classificador.py
+    participant CALC as calculo.py
+
+    U->>API: POST /books/{id}/roadmaps {senioridade, horas}
+    API->>DB: get Book(id)
+    DB-->>API: book.capitulos (sem paginas)
+    API->>PES: pesquisar(session, book, capitulos)
+    PES->>DB: existe Chunk deste book?
+    DB-->>PES: nao (primeira vez)
+    PES->>SX: GET /search "titulo livro numero de paginas"
+    SX-->>PES: resultados (url + snippet)
+    PES->>WEB: GET cada url (trafilatura.html2txt)
+    WEB-->>PES: html
+    PES->>PES: trechos_de_texto() en torno de "paginas"
+    PES->>OLL: embed(trechos, prefixo_documento)
+    OLL-->>PES: vetores 768d
+    PES->>DB: INSERT Chunk (texto, fonte, embedding)
+    PES->>OLL: embed(consulta)
+    PES->>DB: SELECT chunk ORDER BY cosine_distance LIMIT N
+    DB-->>PES: trechos mais próximos
+    PES->>OLL: chat(PROMPT_PESQUISA, schema=PaginasEncontradas)
+    OLL-->>PES: PaginasEncontradas (transcrição, nunca conta)
+    PES->>PES: validar() — número está no trecho citado?
+    PES-->>API: Pesquisa(paginas_totais, url_fonte, avisos)
+    API->>CALC: paginas_de_conteudo() + distribuir_paginas()
+    CALC-->>API: capitulos com paginas estimadas
+    API->>DB: book.classificacao is None?
+    API->>CLS: classificar(titulo, capitulos)
+    CLS->>OLL: chat(PROMPT, schema=Classificacao)
+    OLL-->>CLS: Classificacao (tipo, densidade, por capitulo)
+    CLS-->>API: Classificacao validada
+    API->>CALC: planejar(capitulos, classificacao, senioridade, horas)
+    CALC->>CALC: calcular() por capítulo + filtra por senioridade
+    CALC-->>API: Plano (cronograma, excluidos, fatores)
+    API->>DB: INSERT Roadmap(plano) + UPDATE book
+    DB-->>API: roadmap.id
+    API-->>U: 201 RoadmapCriado
+</pre>
+        <div class="cap">Na 2ª chamada para o mesmo livro, os passos com SearXNG/Ollama-embed somem: <code>pesquisar()</code> lê direto da base <code>chunk</code>, e a classificação já está em <code>book.classificacao</code>.</div>
+      </div>
+    </section>
+
+    <!-- 4. Módulos -->
+    <section id="modulos">
+      <h2><span class="num">04</span>Módulos Python — o que cada arquivo faz</h2>
+      <p class="lede">8 arquivos em <code>src/</code>, cada um um estágio do pipeline ou uma fronteira de
+      infraestrutura. A ordem abaixo é a ordem de dependência: de baixo para cima, cada módulo só importa
+      dos que vêm antes dele.</p>
+
+      <div id="modulos-lista"></div>
+    </section>
+
+    <!-- 5. Rotas -->
+    <section id="rotas">
+      <h2><span class="num">05</span>Rotas HTTP</h2>
+      <p class="lede">4 rotas ao todo — 3 de contrato (documentadas em <code>specs/api.md</code>) e uma página
+      auxiliar sem contrato formal.</p>
+
+      <div id="rotas-lista"></div>
+    </section>
+
+    <!-- 6. Por que uma pasta só -->
+    <section id="pasta-unica">
+      <h2><span class="num">06</span>Por que o código cabe numa pasta só</h2>
+      <p class="lede">Retomando a pergunta de antes, agora com o mapa completo dos 8 arquivos na mesa.</p>
+      <p>Com 8 arquivos e cerca de 1.100 linhas em <code>src/</code>, cada arquivo já corresponde a um estágio
+      do pipeline — <code>extracao.py</code>, <code>classificador.py</code>, <code>pesquisa.py</code> e <code>calculo.py</code>
+      são as quatro etapas da seção 2 da spec, <code>main.py</code> é a casca HTTP, e <code>config.py</code>/<code>db.py</code>/
+      <code>models.py</code> são infraestrutura de uma linha cada. A "organização por pasta" já existe — só que
+      por nome de arquivo, não por subdiretório.</p>
+      <p>Isso evita import circular entre camadas artificiais (não há <code>services/</code> chamando
+      <code>repositories/</code> chamando <code>models/</code> só para repassar uma chamada) e deixa o sistema
+      inteiro visível numa única listagem de diretório — o que casa com o princípio do <code>CLAUDE.md</code> de
+      não criar camada que só repassa chamada, e com a regra de banco de só três tabelas sem
+      <code>relationship()</code> bidirecional.</p>
+      <p class="note">O trade-off é escala: essa estrutura para de compensar perto de uns 15–20 arquivos, quando
+      fica difícil diferenciar "estágio do pipeline" de "utilitário genérico" só pelo nome. Como o escopo já é
+      limitado por spec (3 tabelas, sem repository pattern, sem service layer, ver seção 5 do
+      <code>CLAUDE.md</code>), não há sinal de que o projeto cresça a esse ponto — o ponto de reconsiderar seria
+      um arquivo passando de ~300–400 linhas, onde <code>extracao.py</code> (296, o maior do projeto) já está
+      chegando.</p>
+    </section>
+
+    <!-- 7. Diretórios -->
+    <section id="diretorios">
+      <h2><span class="num">07</span>Diretórios e arquivos não-Python</h2>
+      <p class="lede">Tudo que existe fora de <code>src/*.py</code>, e por que está aí.</p>
+
+      <h3>Diretórios</h3>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Diretório</th><th>Conteúdo</th><th>Por que existe</th></tr></thead>
+          <tbody>
+            <tr><td class="path">src/</td><td>8 módulos Python + <code>__init__.py</code></td><td>todo o código de produção — ver seção 4</td></tr>
+            <tr><td class="path">tests/</td><td>10 arquivos <code>test_*.py</code> + <code>tests/eval/</code></td><td>suíte padrão (LLM/web/embedding mockados, ~8s) e suíte <code>eval</code> (LLM e web reais, marcada <code>pytest.mark.eval</code>, fora do CI padrão)</td></tr>
+            <tr><td class="path">tests/eval/</td><td><code>conftest.py</code>, <code>golden.py</code>, <code>test_propriedades.py</code>, <code>test_pesquisa_web.py</code></td><td>property tests com modelo real contra o golden set; <code>golden.py</code> classifica os livros uma vez por sessão de teste e é reaproveitado pelos dois arquivos de teste</td></tr>
+            <tr><td class="path">migrations/</td><td><code>env.py</code> + <code>versions/*.py</code></td><td>histórico de schema do Alembic — hoje 2 revisões: schema inicial e a adição da pesquisa web</td></tr>
+            <tr><td class="path">specs/</td><td><code>requisitos.md</code>, <code>api.md</code>, <code>adr/</code></td><td>especificação formal versionada — requisitos rastreados a testes, contrato HTTP e decisões de arquitetura</td></tr>
+            <tr><td class="path">specs/adr/</td><td>4 ADRs numerados</td><td>decisões que valeria a pena repetir o erro sem o registro — ex.: por que RAG entre livros foi tentado e descartado (ADR 0003)</td></tr>
+            <tr><td class="path">evals/</td><td><code>comparar_estudo.py</code>, <code>estudo.csv</code>, <code>baseline.json</code></td><td>calibração das constantes de <code>config.yaml</code> contra tempo de estudo real, fora do fluxo de testes automatizado</td></tr>
+            <tr><td class="path">static/</td><td><code>index.html</code></td><td>interface de teste manual servida pela rota <code>GET /</code> — HTML+JS puro, sem build step, sem framework</td></tr>
+            <tr><td class="path">searxng/</td><td><code>settings.yml</code></td><td>configuração do sidecar de busca montada como volume somente-leitura no <code>docker-compose.yml</code></td></tr>
+            <tr><td class="path">docs/</td><td><code>arquitetura.html</code>, <code>config_uv.md</code></td><td>documentação técnica que não cabe no README nem em <code>specs/</code> — diagramas de arquitetura e troubleshooting de ambiente</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Arquivos de configuração e build</h3>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Arquivo</th><th>Por que existe</th></tr></thead>
+          <tbody>
+            <tr><td class="path">pyproject.toml</td><td>lista de dependências, gerenciada só via <code>uv add</code> — nunca editada à mão (regra do <code>CLAUDE.md</code>)</td></tr>
+            <tr><td class="path">uv.lock</td><td>versões travadas de toda a árvore de dependências; garante que <code>uv sync</code> reproduz o mesmo ambiente em outra máquina</td></tr>
+            <tr><td class="path">.python-version</td><td>fixa 3.12.9 para o <code>uv</code> baixar o interpretador certo automaticamente</td></tr>
+            <tr><td class="path">config.yaml</td><td>toda constante de cálculo, prompt-config de LLM e parâmetro de pesquisa — nunca hardcoded no código, para calibração ser "mudar número" e não "reescrever prompt"</td></tr>
+            <tr><td class="path">alembic.ini</td><td>configuração do Alembic — aponta para <code>migrations/</code> e delega a URL do banco a <code>migrations/env.py</code>, que a lê de <code>settings.database_url</code></td></tr>
+            <tr><td class="path">docker-compose.yml</td><td>os 3 sidecars (Postgres+pgvector, Ollama, SearXNG) — a API roda fora do Docker, direto no host com <code>uv run uvicorn</code></td></tr>
+            <tr><td class="path">conftest.py</td><td>raiz do sys.path para os testes resolverem <code>from src...</code>; registra o marker <code>eval</code> e pula esses testes por padrão</td></tr>
+            <tr><td class="path">.gitignore</td><td>exclui <code>test_files/</code> (fixtures locais de PDF, quando existirem), <code>.venv</code>, <code>__pycache__/</code>, <code>.pytest_cache/</code> e <code>.env</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Documentação</h3>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Arquivo</th><th>Por que existe</th></tr></thead>
+          <tbody>
+            <tr><td class="path">CLAUDE.md</td><td>instruções de projeto carregadas automaticamente pelo Claude Code — princípios de estilo, regras de arquitetura e os checkpoints em que a IA deve parar e perguntar antes de decidir sozinha</td></tr>
+            <tr><td class="path">roadmapapi-spec.md</td><td>a especificação funcional completa (pipeline, regras de extração, calculadora) — fonte da verdade que <code>CLAUDE.md</code> manda ler antes de qualquer mudança em <code>src/</code></td></tr>
+            <tr><td class="path">README.md</td><td>guia de quem só quer rodar o sistema: pré-requisitos, subida via Docker, como montar um <code>.txt</code> de sumário, limitações conhecidas</td></tr>
+            <tr><td class="path">docs/config_uv.md</td><td>troubleshooting específico do <code>uv</code> no Ubuntu/zsh — solução de problemas de ambiente que não são deste projeto, mas recorrentes o bastante para documentar aqui</td></tr>
+            <tr><td class="path">specs/requisitos.md</td><td>tabela RF → teste; <code>tests/test_specs.py</code> falha a suíte se um requisito citar teste inexistente ou ficar sem nenhum</td></tr>
+            <tr><td class="path">specs/api.md</td><td>contrato HTTP formal (schemas de request/response, exemplos) — o que consumidores externos da API podem depender</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <b>Um padrão se repete nos 3 grupos acima:</b> nada aqui é opcional por acaso. <code>config.yaml</code> existe
+        porque a spec proíbe constante hardcoded; <code>specs/adr/</code> existe porque uma decisão sem registro (como
+        o RAG entre livros do ADR 0003) tende a ser retentada do zero mais tarde.
+      </div>
+    </section>
+
+    <footer class="page">roadmap-backend · documentação gerada a partir do estado atual do código e das specs em <code>specs/</code> e <code>roadmapapi-spec.md</code></footer>
+  </main>
+</div>
+
+<script>
+  // Um cartão por arquivo de src/: dado, não markup repetido — a estrutura é sempre a mesma,
+  // só o conteúdo muda (8 vezes na versão anterior deste arquivo).
+  const MODULOS = [
+    { id: "mod-config", file: "src/config.py", linhas: 69,
+      papel: "Carrega <code>.env</code> (via <code>Settings</code>, pydantic-settings) e <code>config.yaml</code> " +
+        "(via <code>Config</code>, pydantic puro) uma vez, na importação do módulo. Nenhum outro arquivo lê YAML " +
+        "ou variável de ambiente diretamente — todos importam <code>config</code> ou <code>settings</code> daqui.",
+      deps: "nada do projeto — é a raiz da árvore de imports",
+      entidades: [
+        ["Settings", "BaseSettings", "<code>database_url</code>, <code>ollama_host</code>, <code>searxng_url</code> — hosts, lidos do <code>.env</code>"],
+        ["Extracao · Calculo · LLM · PesquisaWeb", "BaseModel", "um por seção do <code>config.yaml</code>; validam tipo e faixa de cada constante de calibração"],
+        ["Config", "BaseModel", "agrega os quatro acima; instância única <code>config</code> exportada no fim do arquivo"],
+      ] },
+    { id: "mod-db", file: "src/db.py", linhas: 13,
+      papel: "O menor arquivo do projeto: cria o engine assíncrono do SQLAlchemy e expõe a dependência do FastAPI que abre/fecha sessão por requisição.",
+      deps: "config.py",
+      entidades: [
+        ["get_session()", "fn async", "gerador assíncrono; usado como <code>Depends(get_session)</code> em toda rota que toca o banco", true],
+      ] },
+    { id: "mod-models", file: "src/models.py", linhas: 42,
+      papel: "As três tabelas do sistema, sem <code>relationship()</code>, sem cascade — só as três classes ORM descritas no diagrama ER acima.",
+      deps: "nada do projeto (só SQLAlchemy e pgvector)",
+      entidades: [
+        ["Book · Roadmap · Chunk", "DeclarativeBase", "ver seção 1 (ER) para as colunas de cada uma"],
+      ] },
+    { id: "mod-extracao", file: "src/extracao.py", linhas: 296,
+      papel: "O maior arquivo do projeto e o único que faz extração — sem LLM, 100% determinístico com regex e " +
+        "<code>pdfplumber</code>. Recebe bytes de PDF/.txt/.md e devolve um <code>Extraido</code> ou levanta " +
+        "<code>ExtracaoAmbigua</code> (vira 422 em main.py).",
+      deps: "config.py",
+      entidades: [
+        ["Capitulo · Extraido", "BaseModel", "formato de saída — ver seção 2"],
+        ["ExtracaoAmbigua", "Exception", "domínio: \"prefiro falhar a devolver número errado\""],
+        ["extrair()", "fn", "entrada de PDF — abre com pdfplumber, tira marca d'água e ruído, delega a <code>_extrair_de_linhas</code>", true],
+        ["extrair_texto()", "fn", "entrada de .txt/.md — mesma lógica de rótulo, sem camada visual (sem fonte, sem marca d'água)", true],
+        ["_extrair_de_linhas()", "fn privada", "núcleo comum aos dois: localiza sumário, decide paginado vs. sem paginação, monta título", true],
+        ["localizar_sumario · classificar_linhas · fechar_paginas · sumario_sem_paginas · numeracao_consecutiva", "fn",
+          "as 5 etapas do parser: achar a janela do sumário, rotular cada linha (capítulo/marcador/subtópico), fechar páginas por fronteira, ou — sem paginação — montar capítulos só por rótulo e posição", true],
+        ["limpar_ruido · sem_marca_dagua · normalizar · maior_fonte · titulo_cabecalho · titulo_cip · despojar_markdown", "fn auxiliares",
+          "heurísticas de limpeza e de achar o título quando não há metadado explícito", true],
+      ] },
+    { id: "mod-classificador", file: "src/classificador.py", linhas: 137,
+      papel: "Única porta de entrada para o Ollama. Todo prompt do sistema mora aqui, e toda resposta passa por " +
+        "<code>schema.model_validate_json()</code> — nunca por parsing de string.",
+      deps: "config.py, extracao.py (tipo <code>Capitulo</code>)",
+      entidades: [
+        ["Classificacao · CapituloClassificado · Capa · Explicacao", "BaseModel", "schemas de saída — um por tipo de chamada ao modelo"],
+        ["RespostaLLMInvalida · LLMIndisponivel", "Exception", "502 (schema violado) e 503 (Ollama fora/modelo não configurado) em main.py"],
+        ["chat()", "fn async genérica", "chamada crua ao Ollama com <code>format=schema.model_json_schema()</code>, <code>think=False</code>; usada pelas 4 funções abaixo e por <code>pesquisa.py</code>", true],
+        ["classificar() · ler_capa() · explicar()", "fn async", "as 3 chamadas de alto nível — classificação do sumário, leitura de capa em imagem, explicação de um capítulo", true],
+      ] },
+    { id: "mod-pesquisa", file: "src/pesquisa.py", linhas: 208,
+      papel: "Busca na web + base RAG (spec 2.9 e 4). O único módulo que fala com SearXNG, baixa HTML de terceiros e escreve na tabela <code>chunk</code>.",
+      deps: "config.py, extracao.py, classificador.py (reusa <code>chat()</code> e os erros do Ollama)",
+      entidades: [
+        ["TrechoWeb · PaginasEncontradas · Pesquisa", "BaseModel", "<code>PaginasEncontradas</code> é o que o LLM devolve; <code>Pesquisa</code> é o resultado já validado, persistido em <code>book.pesquisa</code>"],
+        ["PesquisaIndisponivel", "Exception", "503 quando o roadmap depende da pesquisa e o SearXNG está fora"],
+        ["buscar_web() · baixar_trechos()", "fn async", "chamam SearXNG e depois cada URL de resultado; nunca guardam corpo de livro, só janela em volta de \"páginas\"", true],
+        ["trechos_de_texto() · fonte_ignorada()", "fn pura", "regex da janela de contagem + filtro de domínio (rede social, e-book/Kindle)", true],
+        ["embeddar()", "fn async", "chama <code>embeddinggemma</code> via Ollama; confere dimensão 768 na resposta", true],
+        ["validar()", "fn pura", "o núcleo anti-alucinação: só aceita o número se ele estiver escrito no trecho da URL citada", true],
+        ["pesquisar()", "fn async, orquestra", "a função pública — decide se busca a web (cache por <code>chunk</code> existente) e monta a chamada ao LLM", true],
+      ] },
+    { id: "mod-calculo", file: "src/calculo.py", linhas: 154,
+      papel: "Python puro, sem I/O, sem LLM — a calculadora determinística que a spec exige. Toda constante vem de <code>config.yaml</code> via <code>config.calculo</code>.",
+      deps: "config.py, extracao.py, classificador.py (só os tipos)",
+      entidades: [
+        ["Fatores · HorasCapitulo · Excluido · Trecho · Semana · OrigemPaginas · Plano", "BaseModel", "a árvore de saída — ver diagrama de classes"],
+        ["paginas_de_conteudo() · distribuir_paginas()", "fn pura", "só usadas quando o sumário não tem paginação: aplicam a fração calibrada e repartem por maior resto", true],
+        ["calcular()", "fn pura", "um capítulo → horas de leitura/código/escrita, aplicando os 4 fatores (senioridade, gap, baixo nível, peso)", true],
+        ["planejar()", "fn pura, orquestra", "filtra capítulos abaixo da senioridade, chama <code>calcular()</code> em cada um, distribui em semanas", true],
+      ] },
+    { id: "mod-main", file: "src/main.py", linhas: 203,
+      papel: "A camada HTTP — a única que conhece FastAPI. Cada rota é curta porque toda regra de negócio já mora " +
+        "nos módulos acima; aqui só se orquestra a ordem das chamadas e se traduz exceção de domínio em código de status.",
+      deps: "todos os módulos acima",
+      entidades: [
+        ["BookCriado · PedidoRoadmap · RoadmapCriado", "BaseModel", "formas de request/response que estendem <code>Extraido</code> e <code>Plano</code> com <code>id</code>"],
+        ["STATUS_DE_ERRO + erro_de_dominio()", "tabela + handler", "mapeia cada exceção de domínio (das 4 acima) ao status HTTP; registrado uma vez por tipo no fim do módulo", true],
+        ["criar_book() · criar_roadmap() · explicar_capitulo() · interface_de_teste()", "rotas", "ver seção de rotas abaixo", true],
+      ] },
+  ];
+
+  const modulo = (m) => `
+    <div class="module" id="${m.id}">
+      <div class="module-head"><span class="file">${m.file}</span><span class="lines">${m.linhas} linhas</span></div>
+      <p class="role">${m.papel}</p>
+      <div class="deps">depende de: <b>${m.deps}</b></div>
+      <div class="entity-grid">${m.entidades.map(([nome, tipo, texto, fn]) => `
+        <div class="entity"><span class="name">${nome}</span><span class="kind${fn ? " fn" : ""}">${tipo}</span>
+          <div class="members"><div${fn ? ' class="fn"' : ""}>${texto}</div></div>
+        </div>`).join("")}</div>
+    </div>`;
+  document.getElementById("modulos-lista").innerHTML = MODULOS.map(modulo).join("");
+
+  // Mesma ideia para as rotas: verbo, caminho, descrição e os status possíveis.
+  const ROTAS = [
+    { verb: "get", path: "/", desc: "Serve <code>static/index.html</code> — interface de teste manual, fora do Swagger. Não tem schema de resposta porque não é parte do contrato da API.", codes: [] },
+    { verb: "post", path: "/books",
+      desc: "Recebe um arquivo (PDF, .txt/.md ou capa JPEG/PNG). Calcula <code>sha256</code> do conteúdo; se já existe " +
+        "<code>Book</code> com esse hash, devolve 200 sem reprocessar. Senão, extrai (capa → <code>ler_capa()</code>; " +
+        "texto → <code>extrair_texto()</code>; PDF → <code>extrair()</code> fora do event loop) e persiste.",
+      codes: [["ok", "201 criado"], ["ok", "200 já existia (cache)"], ["err", "415 tipo não suportado"], ["err", "422 sumário ambíguo"]] },
+    { verb: "post", path: "/books/{book_id}/roadmaps",
+      desc: "O endpoint mais longo: confere sumário, pesquisa páginas na web se faltarem (cacheado em <code>book.pesquisa</code>), " +
+        "classifica com LLM se ainda não classificado (cacheado em <code>book.classificacao</code>), calcula e persiste o " +
+        "<code>Roadmap</code>. Corpo: <code>{\"senioridade\": \"Junior\"|\"Pleno\"|\"Senior\", \"disponibilidade_horas\": float}</code>.",
+      codes: [["ok", "201 criado"], ["err", "404 livro não existe"], ["err", "422 sem sumário / sem páginas e sem fonte"], ["err", "502 resposta do LLM fora do schema"], ["err", "503 Ollama ou SearXNG fora"]] },
+    { verb: "get", path: "/roadmaps/{roadmap_id}/explicar?capitulo=N",
+      desc: "Busca as horas (ou o motivo de exclusão) já persistidas em <code>roadmap.plano</code> e pede ao LLM só a " +
+        "redação da explicação em português — o modelo não recalcula nada, só recebe os números prontos e escreve 2 a 4 frases.",
+      codes: [["ok", "200 ok"], ["err", "404 roadmap ou capítulo não existe"], ["err", "503 Ollama fora"]] },
+  ];
+
+  const rota = (r) => `
+    <div class="route">
+      <span class="verb ${r.verb}">${r.verb.toUpperCase()}</span>
+      <div>
+        <div class="path">${r.path}</div>
+        <div class="desc">${r.desc}</div>
+        ${r.codes.length ? `<div class="codes">${r.codes.map(([cls, txt]) => `<span class="${cls}">${txt}</span>`).join("")}</div>` : ""}
+      </div>
+    </div>`;
+  document.getElementById("rotas-lista").innerHTML = ROTAS.map(rota).join("");
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default",
+  });
+</script>
+</body>
+</html>

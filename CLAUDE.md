@@ -31,7 +31,7 @@ uv run pytest -m eval                   # evals com LLM e web reais — ver chec
 uv run alembic upgrade head             # migrations
 docker compose up -d                    # Postgres + Ollama + SearXNG
 ```
-Obs: Se tiver algum problema com o uv e seu ambiente, consultar o arquivo config_uv.md, nele há possiveis soluções para problemas.
+Obs: Se tiver algum problema com o uv e seu ambiente, consultar o arquivo docs/config_uv.md, nele há possiveis soluções para problemas.
 
 ## Estilo de código
 
