@@ -11,12 +11,12 @@ from urllib.parse import urlparse
 
 import httpx
 import trafilatura
-from ollama import AsyncClient, ResponseError
+from ollama import AsyncClient
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.classificador import LLMIndisponivel, RespostaLLMInvalida, chat
+from src.classificador import ERROS_OLLAMA, LLMIndisponivel, RespostaLLMInvalida, chat
 from src.config import config, settings
 from src.extracao import Capitulo
 from src.models import Book, Chunk
@@ -60,10 +60,10 @@ class PaginasEncontradas(BaseModel):
 class Pesquisa(BaseModel):
     """Persistida em book.pesquisa."""
 
-    paginas_totais: int | None
-    url_fonte: str | None
+    paginas_totais: int | None = None
+    url_fonte: str | None = None
     justificativa: str
-    fontes_consultadas: list[str]
+    fontes_consultadas: list[str] = []
     outras_contagens: list[str] = []
 
 
@@ -106,23 +106,15 @@ def validar(achado: PaginasEncontradas, fontes: list[TrechoWeb], n_capitulos: in
     consultadas = sorted({f.url for f in fontes})
     n = achado.paginas_totais
     if not achado.mesmo_livro or n is None:
-        return Pesquisa(paginas_totais=None, url_fonte=None, justificativa=achado.justificativa, fontes_consultadas=consultadas)
+        return Pesquisa(justificativa=achado.justificativa, fontes_consultadas=consultadas)
 
     citados = [f for f in fontes if f.url == achado.url_fonte]
     if not any(re.search(rf"(?<!\d){n}(?!\d)", f.texto) for f in citados):
-        return Pesquisa(
-            paginas_totais=None,
-            url_fonte=None,
-            justificativa=f"O modelo citou {n} páginas, mas o número não está no trecho da fonte citada: descartado.",
-            fontes_consultadas=consultadas,
-        )
+        motivo = f"O modelo citou {n} páginas, mas o número não está no trecho da fonte citada: descartado."
+        return Pesquisa(justificativa=motivo, fontes_consultadas=consultadas)
     if n < n_capitulos:
-        return Pesquisa(
-            paginas_totais=None,
-            url_fonte=None,
-            justificativa=f"{n} páginas para {n_capitulos} capítulos não é plausível: descartado.",
-            fontes_consultadas=consultadas,
-        )
+        motivo = f"{n} páginas para {n_capitulos} capítulos não é plausível: descartado."
+        return Pesquisa(justificativa=motivo, fontes_consultadas=consultadas)
 
     # Divergência só conta em trecho sobre este livro: contagem de outro livro no mesmo resultado é ruído.
     deste_livro = set(achado.trechos_deste_livro)
@@ -174,7 +166,7 @@ async def embeddar(textos: list[str], prefixo: str) -> list[list[float]]:
     cliente = AsyncClient(host=settings.ollama_host, timeout=config.llm.timeout_s)
     try:
         resposta = await cliente.embed(model=config.llm.modelo_embedding, input=[prefixo + t for t in textos])
-    except (ResponseError, httpx.HTTPError, ConnectionError) as exc:
+    except ERROS_OLLAMA as exc:
         raise LLMIndisponivel(f"Falha ao gerar embeddings no Ollama: {exc}") from exc
     vetores = [list(v) for v in resposta.embeddings]
     if any(len(v) != DIMENSOES for v in vetores):
@@ -204,12 +196,7 @@ async def pesquisar(session: AsyncSession, book: Book, capitulos: list[Capitulo]
     )
     fontes = [TrechoWeb(url=url, texto=texto) for url, texto in linhas]
     if not fontes:
-        return Pesquisa(
-            paginas_totais=None,
-            url_fonte=None,
-            justificativa="Nenhum trecho com número de páginas encontrado na web.",
-            fontes_consultadas=[],
-        )
+        return Pesquisa(justificativa="Nenhum trecho com número de páginas encontrado na web.")
 
     inicio_sumario = "\n".join(f"{c.num}. {c.titulo}" for c in capitulos[:8])
     lista = "\n\n".join(f"[{i}] {f.url}\n{f.texto}" for i, f in enumerate(fontes, 1))

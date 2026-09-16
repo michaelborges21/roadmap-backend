@@ -30,9 +30,9 @@ class Capitulo(BaseModel):
 class Extraido(BaseModel):
     titulo: str
     origem: Literal["sumario", "capa"]
-    paginas_conteudo: int | None
-    paginas_fisicas: int | None
-    capitulos: list[Capitulo]
+    paginas_conteudo: int | None = None
+    paginas_fisicas: int | None = None
+    capitulos: list[Capitulo] = []
 
 
 Entrada = dict[str, str | int | None]
@@ -109,7 +109,7 @@ def _extrair_de_linhas(
         titulo = titulo_cip(linhas) or titulo_capa(linhas)
         if not titulo:
             raise ExtracaoAmbigua("Capa sem título legível.")
-        return Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
+        return Extraido(titulo=titulo, origem="capa")
 
     inicio, janela = loc
     # Paginado só se alguma linha termina em página arábica: título acabado em "mil" ou "civil" casa
@@ -235,9 +235,12 @@ def sumario_sem_paginas(linhas: list[str]) -> list[Capitulo]:
             corrente = None  # apresentação, prefácio, parte, apêndice: não é capítulo nem subtópico dele
         elif corrente:
             corrente.subtopicos.append(linha)
+    return numeracao_consecutiva(capitulos, "Sumário encontrado, mas nenhum capítulo reconhecido (nem com nem sem número de página).")
 
+
+def numeracao_consecutiva(capitulos: list[Capitulo], sem_capitulo: str) -> list[Capitulo]:
     if not capitulos:
-        raise ExtracaoAmbigua("Sumário encontrado, mas nenhum capítulo reconhecido (nem com nem sem número de página).")
+        raise ExtracaoAmbigua(sem_capitulo)
     if [c.num for c in capitulos] != list(range(capitulos[0].num, capitulos[0].num + len(capitulos))):
         raise ExtracaoAmbigua("Numeração de capítulos com lacunas ou repetições.")
     return capitulos
@@ -277,11 +280,7 @@ def fechar_paginas(entradas: list[Entrada]) -> tuple[list[Capitulo], int]:
             raise ExtracaoAmbigua(f"Capítulo {e['num']} com {paginas} páginas.")
         capitulos.append(Capitulo(num=int(e["num"]), titulo=str(e["titulo"]), pag_inicio=pags[i], paginas=paginas))  # type: ignore[arg-type]
         fim = pags[i + 1]
-
-    if not capitulos:
-        raise ExtracaoAmbigua("Sumário encontrado, mas nenhum capítulo reconhecido.")
-    if [c.num for c in capitulos] != list(range(capitulos[0].num, capitulos[0].num + len(capitulos))):
-        raise ExtracaoAmbigua("Numeração de capítulos com lacunas ou repetições.")
+    numeracao_consecutiva(capitulos, "Sumário encontrado, mas nenhum capítulo reconhecido.")
 
     # Subtópico anexa ao capítulo corrente; antes do 1º capítulo ou após marcador é descartado.
     por_num = {c.num: c for c in capitulos}

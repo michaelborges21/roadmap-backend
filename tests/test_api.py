@@ -3,9 +3,11 @@ Skip se o banco estiver fora."""
 
 import hashlib
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select, text
 
@@ -33,13 +35,15 @@ E1 = [1.0] + [0.0] * 767
 EDITORA = "https://editora.exemplo/livro"
 
 
-async def banco_no_ar() -> bool:
+@pytest_asyncio.fixture
+async def banco() -> AsyncIterator[None]:
     try:
         async with engine.connect() as conn:
             await conn.execute(text("select 1"))
-        return True
     except OSError:
-        return False
+        pytest.skip("Postgres fora do ar (docker compose up -d db)")
+    yield
+    await engine.dispose()
 
 
 def novo_book(titulo: str, capitulos: list[dict], **kw: object) -> Book:
@@ -61,31 +65,38 @@ async def apagar(ids: list[int]) -> None:
         await s.commit()
 
 
+async def apagar_por_hash(hashes: list[str]) -> None:
+    async with Session() as s:
+        await s.execute(delete(Book).where(Book.hash_fonte.in_(hashes)))
+        await s.commit()
+
+
 def cliente() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=main.app), base_url="http://teste")
 
 
-@pytest.mark.asyncio
-async def test_fluxo_roadmap(monkeypatch: pytest.MonkeyPatch):
-    if not await banco_no_ar():
-        pytest.skip("Postgres fora do ar (docker compose up -d db)")
+async def classificar_fake(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
+    return CLS
 
+
+@pytest.mark.asyncio
+async def test_fluxo_roadmap(monkeypatch: pytest.MonkeyPatch, banco: None):
     chamadas = 0
     explicados: list[dict[str, object]] = []
 
-    async def classificar_fake(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
+    async def classificar_contando(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
         nonlocal chamadas
         chamadas += 1
         return CLS
 
     async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
-        return Pesquisa(paginas_totais=None, url_fonte=None, justificativa="sem fonte", fontes_consultadas=[])
+        return Pesquisa(justificativa="sem fonte")
 
     async def explicar_fake(capitulo: str, dados: dict[str, object]) -> Explicacao:
         explicados.append(dados)
         return Explicacao(explicacao="ok")
 
-    monkeypatch.setattr(main, "classificar", classificar_fake)
+    monkeypatch.setattr(main, "classificar", classificar_contando)
     monkeypatch.setattr(main, "pesquisar", pesquisar_fake)
     monkeypatch.setattr(main, "explicar", explicar_fake)
     book, capa = novo_book("Livro", CAPS, paginas_conteudo=60), novo_book("Só capa", [])
@@ -114,22 +125,15 @@ async def test_fluxo_roadmap(monkeypatch: pytest.MonkeyPatch):
             assert (await http.get(f"/roadmaps/{senior}/explicar", params={"capitulo": 9})).status_code == 404
     finally:
         await apagar([book.id, capa.id])
-        await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_roadmap_de_sumario_sem_paginas(monkeypatch: pytest.MonkeyPatch):
-    if not await banco_no_ar():
-        pytest.skip("Postgres fora do ar (docker compose up -d db)")
-
-    async def classificar_fake(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
-        return CLS
-
+async def test_roadmap_de_sumario_sem_paginas(monkeypatch: pytest.MonkeyPatch, banco: None):
     async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
         if "indisponível" in book.titulo:
             raise PesquisaIndisponivel("SearXNG fora do ar")
         if "sem fonte" in book.titulo:
-            return Pesquisa(paginas_totais=None, url_fonte=None, justificativa="Nenhum trecho encontrado.", fontes_consultadas=[])
+            return Pesquisa(justificativa="Nenhum trecho encontrado.")
         return Pesquisa(
             paginas_totais=120,
             url_fonte=EDITORA,
@@ -168,14 +172,10 @@ async def test_roadmap_de_sumario_sem_paginas(monkeypatch: pytest.MonkeyPatch):
             assert r.status_code == 201 and any("indisponível" in a for a in r.json()["avisos"])
     finally:
         await apagar([b.id for b in books])
-        await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest.MonkeyPatch):
-    if not await banco_no_ar():
-        pytest.skip("Postgres fora do ar (docker compose up -d db)")
-
+async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest.MonkeyPatch, banco: None):
     buscas = 0
     prompts: list[str] = []
 
@@ -208,17 +208,14 @@ async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest
     monkeypatch.setattr(pesquisa, "chat", chat_fake)
     caps = [Capitulo.model_validate(c) for c in CAPS_SEM_PAGINAS]
 
-    try:
-        async with Session() as s:
-            book = novo_book("Livro pesquisado", CAPS_SEM_PAGINAS)
-            s.add(book)
-            await s.flush()
-            primeira = await pesquisar(s, book, caps)
-            segunda = await pesquisar(s, book, caps)
-            fontes = sorted((await s.scalars(select(Chunk.fonte).where(Chunk.book_id == book.id))).all())
-            await s.rollback()  # nada persiste
-    finally:
-        await engine.dispose()
+    async with Session() as s:
+        book = novo_book("Livro pesquisado", CAPS_SEM_PAGINAS)
+        s.add(book)
+        await s.flush()
+        primeira = await pesquisar(s, book, caps)
+        segunda = await pesquisar(s, book, caps)
+        fontes = sorted((await s.scalars(select(Chunk.fonte).where(Chunk.book_id == book.id))).all())
+        await s.rollback()  # nada persiste
 
     assert (primeira.paginas_totais, primeira.url_fonte) == (344, EDITORA)
     assert primeira.outras_contagens == ["448 páginas (loja.exemplo)"]
@@ -228,10 +225,7 @@ async def test_pesquisa_guarda_trechos_na_base_e_reaproveita(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_upload_texto_capa_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
-    if not await banco_no_ar():
-        pytest.skip("Postgres fora do ar (docker compose up -d db)")
-
+async def test_upload_texto_capa_cache_e_erros(monkeypatch: pytest.MonkeyPatch, banco: None):
     async def ler_capa_fake(imagem: bytes) -> Capa:
         return Capa(titulo="JavaScript", subtitulo="O guia definitivo", autor=None, edicao=None)
 
@@ -267,24 +261,18 @@ async def test_upload_texto_capa_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
             ambiguo_r = await envio("ambiguo.txt", ambiguo, "text/plain")
             assert ambiguo_r.status_code == 422 and "não crescente" in ambiguo_r.json()["detail"]
     finally:
-        async with Session() as s:
-            await s.execute(delete(Book).where(Book.hash_fonte.in_(hashes)))
-            await s.commit()
-        await engine.dispose()
+        await apagar_por_hash(hashes)
 
 
 @pytest.mark.asyncio
-async def test_upload_pdf_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
+async def test_upload_pdf_cache_e_erros(banco: None):
     sumario, sem_titulo = FIXTURES / "sumario-9788575229682.pdf", FIXTURES / "sumario-9788575229293.pdf"
     if not (sumario.exists() and sem_titulo.exists()):
         pytest.skip("fixtures PDF ausentes em test_files/")
-    if not await banco_no_ar():
-        pytest.skip("Postgres fora do ar (docker compose up -d db)")
 
     # Bytes após o %%EOF mudam o hash sem afetar a leitura: não colide com livros reais do banco.
     marca = f"\n%{uuid.uuid4().hex}\n".encode()
     pdf, pdf_ambiguo = sumario.read_bytes() + marca, sem_titulo.read_bytes() + marca
-    hashes = [hashlib.sha256(pdf).hexdigest()]
 
     try:
         async with cliente() as http:
@@ -295,7 +283,4 @@ async def test_upload_pdf_cache_e_erros(monkeypatch: pytest.MonkeyPatch):
             ambiguo = await envio("sumario.pdf", pdf_ambiguo)
             assert ambiguo.status_code == 422 and "sem título legível" in ambiguo.json()["detail"]
     finally:
-        async with Session() as s:
-            await s.execute(delete(Book).where(Book.hash_fonte.in_(hashes)))
-            await s.commit()
-        await engine.dispose()
+        await apagar_por_hash([hashlib.sha256(pdf).hexdigest()])

@@ -240,6 +240,14 @@ function barraHorizontal(rotulo, subRotulo, horas, fracaoDoMaior, cor) {
     </div>`;
 }
 
+function painelGrafico(icone, titulo, corpo) {
+  return `<div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+    <div class="mb-1 flex items-center gap-2"><i data-lucide="${icone}" class="h-4 w-4 text-indigo-300"></i>
+      <h3 class="text-sm font-semibold text-white">${titulo}</h3></div>
+    ${corpo}
+  </div>`;
+}
+
 function renderResumoTempo(comRoadmap) {
   const alvo = document.getElementById("resumo-tempo");
   if (!comRoadmap.length) { alvo.innerHTML = ""; return; }
@@ -248,22 +256,16 @@ function renderResumoTempo(comRoadmap) {
   const porLivro = comRoadmap.map((l) => ({ titulo: l.titulo, horas: l.roadmap.total_horas })).sort((a, b) => b.horas - a.horas);
   const maiorLivro = porLivro[0];
   const blocoLivros = porLivro.length > 1
-    ? `<div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-        <div class="mb-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="h-4 w-4 text-indigo-300"></i>
-          <h3 class="text-sm font-semibold text-white">Livro com maior consumo de tempo</h3></div>
+    ? painelGrafico("bar-chart-3", "Livro com maior consumo de tempo", `
         <p class="mb-3 text-xs text-slate-400"><span class="font-medium text-slate-100">${esc(maiorLivro.titulo)}</span>
           concentra o maior total: ${maiorLivro.horas.toFixed(1)}h.</p>
         <div class="space-y-1">${porLivro.map((b) =>
           barraHorizontal(b.titulo, null, b.horas, b.horas / (maiorLivro.horas || 1), b === maiorLivro ? COR_LIVRO_DESTAQUE : COR_LIVRO_CONTEXTO)
-        ).join("")}</div>
-      </div>`
-    : `<div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-        <div class="mb-1 flex items-center gap-2"><i data-lucide="bar-chart-3" class="h-4 w-4 text-indigo-300"></i>
-          <h3 class="text-sm font-semibold text-white">Consumo de tempo</h3></div>
+        ).join("")}</div>`)
+    : painelGrafico("bar-chart-3", "Consumo de tempo", `
         <p class="text-xs text-slate-400">Só um livro com roadmap até agora:
           <span class="font-medium text-slate-100">${esc(maiorLivro.titulo)}</span>, ${maiorLivro.horas.toFixed(1)}h.
-          Gere o roadmap de outro livro para comparar.</p>
-      </div>`;
+          Gere o roadmap de outro livro para comparar.</p>`);
 
   // Capítulos com maior demanda: ranking (forma sequencial, magnitude decrescente) entre os livros já gerados.
   const capitulos = comRoadmap.flatMap((l) => l.roadmap.capitulos.map((c) => ({ titulo: c.titulo, livro: l.titulo, horas: c.total })));
@@ -272,17 +274,13 @@ function renderResumoTempo(comRoadmap) {
     const top = [...capitulos].sort((a, b) => b.horas - a.horas).slice(0, 8);
     const maiorCap = top[0];
     const nivel = (i) => DEGRADE_CAPITULOS[Math.min(3, Math.floor((i / top.length) * 4))];
-    blocoCapitulos = `
-      <div class="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
-        <div class="mb-1 flex items-center gap-2"><i data-lucide="flame" class="h-4 w-4 text-indigo-300"></i>
-          <h3 class="text-sm font-semibold text-white">Capítulos com maior demanda de tempo</h3></div>
+    blocoCapitulos = painelGrafico("flame", "Capítulos com maior demanda de tempo", `
         <p class="mb-3 text-xs text-slate-400">O maior é <span class="font-medium text-slate-100">${esc(maiorCap.titulo)}</span>
           (${esc(maiorCap.livro)}), com ${maiorCap.horas.toFixed(1)}h.
           ${capitulos.length > top.length ? ` Top ${top.length} de ${capitulos.length} capítulos.` : ""}</p>
         <div class="space-y-1">${top.map((c, i) =>
           barraHorizontal(c.titulo, c.livro, c.horas, c.horas / (maiorCap.horas || 1), nivel(i))
-        ).join("")}</div>
-      </div>`;
+        ).join("")}</div>`);
   }
 
   alvo.innerHTML = blocoLivros + blocoCapitulos;
@@ -333,6 +331,18 @@ function linhaCapitulo(c) {
   </tr>`;
 }
 
+function tituloRecolhivel(texto) {
+  return `<summary class="flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-slate-300">
+    <i data-lucide="chevron-down" class="chev h-3.5 w-3.5"></i> ${texto}
+  </summary>`;
+}
+
+function cartaoSimples(livro, cor, conteudo) {
+  return `<div class="rounded-xl border ${cor.border} bg-slate-900/40 px-4 py-3">
+    <h3 class="font-semibold text-white">${esc(livro.titulo)}</h3>${conteudo}
+  </div>`;
+}
+
 function blocoRoadmap(livro, cor) {
   const p = livro.roadmap;
   const origem = p.paginas?.origem === "pesquisa"
@@ -346,9 +356,7 @@ function blocoRoadmap(livro, cor) {
   const avisos = (p.avisos || []).map((a) => `<li class="flex gap-2"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400"></i><span>${esc(a)}</span></li>`).join("");
   const excluidos = p.excluidos.length
     ? `<details class="mt-3">
-        <summary class="flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-slate-300">
-          <i data-lucide="chevron-down" class="chev h-3.5 w-3.5"></i> Fora do cronograma para ${p.senioridade} (${p.excluidos.length})
-        </summary>
+        ${tituloRecolhivel(`Fora do cronograma para ${p.senioridade} (${p.excluidos.length})`)}
         <ul class="mt-2 space-y-1 text-sm text-slate-400">
           ${p.excluidos.map((e) => `<li>${e.num}. ${esc(e.titulo)} — nível ${e.nivel}</li>`).join("")}
         </ul>
@@ -373,9 +381,7 @@ function blocoRoadmap(livro, cor) {
         <p class="text-xs text-slate-400">Páginas: ${origem}</p>
         ${avisos ? `<ul class="mt-2 space-y-1 text-xs text-slate-300">${avisos}</ul>` : ""}
         <details open class="mt-3">
-          <summary class="flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-slate-300">
-            <i data-lucide="chevron-down" class="chev h-3.5 w-3.5"></i> Capítulos para estudar
-          </summary>
+          ${tituloRecolhivel("Capítulos para estudar")}
           <div class="mt-2 overflow-x-auto custom-scrollbar rounded-lg border border-slate-800">
             <table class="w-full text-left text-sm"><thead><tr class="bg-slate-800/60 text-[11px] font-mono uppercase tracking-widest text-slate-500">
               <th class="py-2 px-3 font-medium">#</th><th class="py-2 px-3 font-medium">capítulo</th><th class="py-2 px-3 font-medium">nível</th>
@@ -384,9 +390,7 @@ function blocoRoadmap(livro, cor) {
           </div>
         </details>
         <details class="mt-3">
-          <summary class="flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-slate-300">
-            <i data-lucide="chevron-down" class="chev h-3.5 w-3.5"></i> Cronograma por semana
-          </summary>
+          ${tituloRecolhivel("Cronograma por semana")}
           <div class="mt-2 overflow-x-auto custom-scrollbar rounded-lg border border-slate-800">
             <table class="w-full text-left text-sm"><tbody>${semanas}</tbody></table>
           </div>
@@ -413,22 +417,14 @@ async function gerarRoadmaps() {
       saida.appendChild(bloco);
 
       if (!livro.capitulos.length) {
-        bloco.innerHTML = `<div class="rounded-xl border ${cor.border} bg-slate-900/40 px-4 py-3">
-          <h3 class="font-semibold text-white">${esc(livro.titulo)}</h3>
-          <p class="mt-1 text-xs text-amber-400">Só a capa foi enviada: falta o sumário deste livro.</p>
-        </div>`;
+        bloco.innerHTML = cartaoSimples(livro, cor, `<p class="mt-1 text-xs text-amber-400">Só a capa foi enviada: falta o sumário deste livro.</p>`);
         continue;
       }
-      bloco.innerHTML = `<div class="rounded-xl border ${cor.border} bg-slate-900/40 px-4 py-3">
-        <h3 class="font-semibold text-white">${esc(livro.titulo)}</h3>
-        <p class="mt-1 text-xs text-slate-400">Gerando…</p>
-      </div>`;
+      bloco.innerHTML = cartaoSimples(livro, cor, `<p class="mt-1 text-xs text-slate-400">Gerando…</p>`);
 
       const r = await chamar(`/books/${livro.id}/roadmaps`, { method: "POST", headers: { "content-type": "application/json" }, body: corpo });
       if (!r.ok) {
-        bloco.innerHTML = `<div class="rounded-xl border ${cor.border} bg-slate-900/40 px-4 py-3">
-          <h3 class="font-semibold text-white">${esc(livro.titulo)}</h3><p class="mt-1 text-sm">${erroDe(r)}</p>
-        </div>`;
+        bloco.innerHTML = cartaoSimples(livro, cor, `<p class="mt-1 text-sm">${erroDe(r)}</p>`);
         livro.roadmap = null;
         continue;
       }
@@ -450,8 +446,12 @@ function atualizarSeletorLivros() {
   preencherCapitulos();
 }
 
+function livroEscolhido() {
+  return livros.find((l) => String(l.id) === document.getElementById("livro-explicar").value);
+}
+
 function preencherCapitulos() {
-  const livro = livros.find((l) => String(l.id) === document.getElementById("livro-explicar").value);
+  const livro = livroEscolhido();
   const seletor = document.getElementById("capitulo-explicar");
   if (!livro?.roadmap) { seletor.innerHTML = ""; return; }
   const noCronograma = livro.roadmap.capitulos.map((c) => ({ num: c.num, rotulo: `${c.num}. ${c.titulo} — ${c.total.toFixed(1)}h` }));
@@ -463,7 +463,7 @@ function preencherCapitulos() {
 }
 
 async function explicarCapitulo() {
-  const livro = livros.find((l) => String(l.id) === document.getElementById("livro-explicar").value);
+  const livro = livroEscolhido();
   const capitulo = document.getElementById("capitulo-explicar").value;
   const saida = document.getElementById("saida-explicar");
   if (!livro?.roadmap || !capitulo) { saida.innerHTML = `<span class="text-slate-500">Escolha o livro e o capítulo.</span>`; return; }

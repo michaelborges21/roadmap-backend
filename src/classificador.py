@@ -11,6 +11,7 @@ from src.config import config, settings
 from src.extracao import Capitulo
 
 Nivel = Literal["iniciante", "intermediario", "avancado"]
+ERROS_OLLAMA = (ResponseError, httpx.HTTPError, ConnectionError)
 
 
 class CapituloClassificado(BaseModel):
@@ -93,7 +94,7 @@ async def chat[T: BaseModel](modelo: str | None, papel: str, messages: list[dict
                 "num_predict": config.llm.num_predict,
             },
         )
-    except (ResponseError, httpx.HTTPError, ConnectionError) as exc:
+    except ERROS_OLLAMA as exc:
         raise LLMIndisponivel(f"Falha ao chamar o Ollama: {exc}") from exc
     if resposta.done_reason == "length":
         raise RespostaLLMInvalida(

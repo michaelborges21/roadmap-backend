@@ -1,7 +1,7 @@
 """Calculadora e cronograma (spec 2.7–2.9). Python puro e determinístico."""
 
 from math import ceil
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel
 
@@ -10,8 +10,8 @@ from src.config import config
 from src.extracao import Capitulo
 
 Senioridade = Literal["Junior", "Pleno", "Senior"]
-NIVEIS: list[Nivel] = ["iniciante", "intermediario", "avancado"]
-SENIORIDADES: list[Senioridade] = ["Junior", "Pleno", "Senior"]
+NIVEIS: list[Nivel] = list(get_args(Nivel))
+SENIORIDADES: list[Senioridade] = list(get_args(Senioridade))
 EPS = 1e-9
 
 calc = config.calculo

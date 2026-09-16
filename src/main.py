@@ -32,18 +32,33 @@ from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair, extrair_t
 from src.models import Book, Roadmap
 from src.pesquisa import Pesquisa, PesquisaIndisponivel, pesquisar
 
-app = FastAPI(title="roadmapAPI")
+app = FastAPI(title="RoadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 IMAGENS = {"image/jpeg", "image/png"}
 # .md muitas vezes chega como text/plain ou application/octet-stream: navegador não conhece o tipo.
 # A extensão do arquivo desempata; sem extensão reconhecida, cai no content_type mesmo.
-TEXTOS = {"text/plain", "text/markdown", "text/x-markdown"}
+MARKDOWN = {"text/markdown", "text/x-markdown"}
+TEXTOS = {"text/plain", *MARKDOWN}
 STATIC_DIR = Path(__file__).parent.parent / "static"
+STATUS_DE_ERRO: dict[type[Exception], int] = {
+    ExtracaoAmbigua: 422,
+    RespostaLLMInvalida: 502,
+    LLMIndisponivel: 503,
+    PesquisaIndisponivel: 503,
+}
+
+
+async def erro_de_dominio(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=STATUS_DE_ERRO[type(exc)], content={"detail": str(exc)})
+
+
+for erro in STATUS_DE_ERRO:
+    app.add_exception_handler(erro, erro_de_dominio)
 
 
 @app.get("/", include_in_schema=False)
 async def interface_de_teste() -> FileResponse:
-    """Página auxiliar sem estilo para exercitar a API sem o Swagger. Não é parte do contrato."""
+    """Página auxiliar para exercitar a API sem o Swagger. Não é parte do contrato."""
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -62,30 +77,10 @@ class RoadmapCriado(Plano):
     book_id: int
 
 
-@app.exception_handler(ExtracaoAmbigua)
-async def extracao_ambigua(request: Request, exc: ExtracaoAmbigua) -> JSONResponse:
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
-
-
-@app.exception_handler(RespostaLLMInvalida)
-async def resposta_llm_invalida(request: Request, exc: RespostaLLMInvalida) -> JSONResponse:
-    return JSONResponse(status_code=502, content={"detail": str(exc)})
-
-
-@app.exception_handler(LLMIndisponivel)
-async def llm_indisponivel(request: Request, exc: LLMIndisponivel) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
-
-
-@app.exception_handler(PesquisaIndisponivel)
-async def pesquisa_indisponivel(request: Request, exc: PesquisaIndisponivel) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
-
-
 @app.post("/books", status_code=201)
 async def criar_book(arquivo: UploadFile, response: Response, session: SessionDep) -> BookCriado:
     nome = (arquivo.filename or "").lower()
-    markdown = arquivo.content_type in {"text/markdown", "text/x-markdown"} or nome.endswith((".md", ".markdown"))
+    markdown = arquivo.content_type in MARKDOWN or nome.endswith((".md", ".markdown"))
     e_texto = markdown or arquivo.content_type in TEXTOS or nome.endswith(".txt")
     e_pdf = arquivo.content_type == "application/pdf" or nome.endswith(".pdf")
     e_imagem = arquivo.content_type in IMAGENS or nome.endswith((".jpg", ".jpeg", ".png"))
@@ -101,7 +96,7 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
         if e_imagem:
             capa = await ler_capa(dados)
             titulo = f"{capa.titulo}: {capa.subtitulo}" if capa.subtitulo else capa.titulo
-            ext = Extraido(titulo=titulo, origem="capa", paginas_conteudo=None, paginas_fisicas=None, capitulos=[])
+            ext = Extraido(titulo=titulo, origem="capa")
         elif e_texto:
             ext = extrair_texto(dados, markdown)
         else:
@@ -111,9 +106,8 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
         session.add(book)
         await session.commit()
 
-    return BookCriado.model_validate(
-        {**Extraido.model_validate(book, from_attributes=True).model_dump(), "id": book.id, "falta_sumario": not book.capitulos}
-    )
+    extraido = Extraido.model_validate(book, from_attributes=True).model_dump()
+    return BookCriado(**extraido, id=book.id, falta_sumario=not book.capitulos)
 
 
 @app.post("/books/{book_id}/roadmaps", status_code=201)
