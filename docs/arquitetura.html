@@ -189,6 +189,14 @@
   }
   .callout b { color: var(--accent-ink); }
 
+  .codeblock {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; margin: 14px 0; overflow-x: auto;
+    font-family: var(--mono); font-size: .8rem; line-height: 1.75; color: var(--ink);
+  }
+  .codeblock b { color: var(--accent-ink); font-weight: 600; }
+  .codeblock i { color: var(--faint); font-style: normal; }
+
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
 
@@ -227,6 +235,16 @@
       <li><a href="#rotas">Rotas HTTP</a></li>
       <li><a href="#pasta-unica">Por que uma pasta só</a></li>
       <li><a href="#diretorios">Diretórios e arquivos não-Python</a></li>
+      <li><a href="#calculo">Como o cálculo funciona</a>
+        <ul class="sub">
+          <li><a href="#calculo-formula">A fórmula</a></li>
+          <li><a href="#calculo-fatores">Os quatro fatores</a></li>
+          <li><a href="#calculo-exemplo">Exemplo verificado</a></li>
+          <li><a href="#calculo-senioridade">Senioridade</a></li>
+          <li><a href="#calculo-cronograma">Cronograma</a></li>
+          <li><a href="#calculo-sem-paginas">Sem paginação</a></li>
+        </ul>
+      </li>
     </ol>
   </nav>
 
@@ -573,6 +591,128 @@ sequenceDiagram
       </div>
     </section>
 
+    <!-- 8. Cálculo -->
+    <section id="calculo">
+      <h2><span class="num">08</span>Como o cálculo funciona</h2>
+      <p class="lede">Detalhe de <code>src/calculo.py</code> — o único lugar onde horas, semanas e páginas são
+      contadas. Nenhuma conta sai do LLM: o modelo entrega categorias (<code>densidade</code>,
+      <code>tipo_livro</code>, <code>nivel</code> e <code>peso</code> por capítulo) e todo o resto é aritmética
+      determinística. Rodar duas vezes com a mesma entrada dá exatamente o mesmo plano.</p>
+
+      <h3 id="calculo-formula">A fórmula, em 4 linhas</h3>
+      <p>É o corpo de <code>calcular()</code>. A unidade de partida é <b>minutos por página</b>, dividida por 60
+      para virar hora:</p>
+      <div class="codeblock">
+<b>fator</b>   = f_senior[senioridade] × gap × baixo_nivel × peso_do_capitulo<br>
+<b>leitura</b> = páginas × min_pagina[densidade] ÷ 60 × fator<br>
+<b>codigo</b>  = leitura × ratio_codigo[tipo_livro]   <i>// prática de código é proporcional à leitura</i><br>
+<b>escrita</b> = leitura × ratio_escrita              <i>// anotações, 15% da leitura</i><br>
+<b>total</b>   = leitura + codigo + escrita
+      </div>
+      <p class="note">Só <code>leitura</code> depende das páginas. <code>codigo</code> e <code>escrita</code> são
+      múltiplos dela — por isso calibrar <code>min_pagina</code> desloca as três parcelas de uma vez.</p>
+
+      <h3 id="calculo-fatores">Os quatro fatores</h3>
+      <p>Todos multiplicam entre si e ficam persistidos em <code>fatores</code>, no plano. É o que permite
+      responder "por que esse capítulo deu 6h?" sem chamar o LLM de novo.</p>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Fator</th><th>Quem decide</th><th>Valor hoje</th><th>Quando sai de 1.0</th></tr></thead>
+          <tbody>
+            <tr><td class="path">senioridade</td><td>o leitor (request)</td><td class="num">Junior 1.3 · Pleno 1.0 · Senior 0.7</td><td>sempre — júnior lê mais devagar, sênior mais rápido</td></tr>
+            <tr><td class="path">gap</td><td>Python, comparando níveis</td><td class="num">1.3 ou 1.0</td><td>quando o livro é mais avançado que o leitor</td></tr>
+            <tr><td class="path">baixo_nivel</td><td>Python, olhando <code>linguagens</code> do LLM</td><td class="num">1.3 ou 1.0</td><td>se o livro ensina C, C++, Rust, Assembly ou Zig</td></tr>
+            <tr><td class="path">peso</td><td>o LLM, por capítulo</td><td class="num">0.5 a 2.0</td><td>esforço relativo do capítulo (1.0 = médio)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">O <code>peso</code> é o único fator que vem do modelo — e mesmo ele é só um número numa
+      faixa validada por Pydantic (<code>ge=0.5, le=2.0</code>), nunca uma quantidade de horas.</p>
+
+      <h3 id="calculo-exemplo">Exemplo verificado ponta a ponta</h3>
+      <p>Livro híbrido de Python, densidade média, <code>nivel_natural = intermediario</code>. Capítulo 2 com
+      <b>30 páginas</b> e <code>peso = 1.2</code>. Os números abaixo saíram de executar o próprio
+      <code>calcular()</code>, não de conta à mão:</p>
+      <div class="codeblock">
+<i>// base, igual para as três senioridades:</i><br>
+30 páginas × 2.5 min/pág ÷ 60 = <b>1.25 h</b> de leitura antes dos fatores<br><br>
+<i>// Pleno — f_senior 1.0, gap 1.0 (livro no nível dele), baixo 1.0, peso 1.2</i><br>
+fator 1.200 → leitura 1.500 + codigo 0.600 + escrita 0.225 = <b>2.325 h</b><br><br>
+<i>// Junior — f_senior 1.3 e gap 1.3 (livro acima do nível dele), peso 1.2</i><br>
+fator 2.028 → leitura 2.535 + codigo 1.014 + escrita 0.380 = <b>3.929 h</b><br><br>
+<i>// Senior — f_senior 0.7, gap 1.0, peso 1.2</i><br>
+fator 0.840 → leitura 1.050 + codigo 0.420 + escrita 0.158 = <b>1.628 h</b>
+      </div>
+      <p>O mesmo capítulo num livro de <b>Rust</b> em vez de Python, para Pleno: <code>baixo_nivel</code> entra
+      como 1.3 e o total vai de <b>2.325 h para 3.023 h</b>.</p>
+
+      <h3 id="calculo-senioridade">Senioridade faz duas coisas diferentes</h3>
+      <p>Esse é o ponto menos óbvio do arquivo. A senioridade <b>pesa</b> (como fator, acima) e também
+      <b>filtra</b> — capítulo abaixo do nível do leitor não entra no cronograma, vai para
+      <code>excluidos</code>. A decisão é de produto: se todo leitor lesse todos os capítulos, o projeto não
+      teria razão de existir (<code>specs/adr/0002</code>).</p>
+      <div class="codeblock">
+<i>// as duas listas são comparadas por POSIÇÃO, não por nome:</i><br>
+NIVEIS       = [iniciante, intermediario, avancado]   <i>// nível do capítulo</i><br>
+SENIORIDADES = [Junior,    Pleno,         Senior]     <i>// nível do leitor</i><br><br>
+<b>filtro</b>: entra se índice(nivel_do_capitulo) &gt;= índice(senioridade)<br>
+<b>gap</b>   : 1.3 se índice(nivel_natural_do_livro) &gt; índice(senioridade)
+      </div>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Senioridade</th><th>Capítulos que entram</th><th>No exemplo acima (3 capítulos)</th><th>Total</th><th>Semanas</th></tr></thead>
+          <tbody>
+            <tr><td class="path">Junior</td><td>iniciante + intermediario + avancado (todos)</td><td>caps 1, 2 e 3 — nada excluído</td><td class="num">10.21 h</td><td class="num">2</td></tr>
+            <tr><td class="path">Pleno</td><td>intermediario + avancado</td><td>caps 2 e 3 — cap 1 (iniciante) excluído</td><td class="num">4.75 h</td><td class="num">1</td></tr>
+            <tr><td class="path">Senior</td><td>só avancado</td><td>cap 3 — caps 1 e 2 excluídos</td><td class="num">1.70 h</td><td class="num">1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Os dois efeitos se somam na mesma direção: o sênior estuda menos capítulos <i>e</i> gasta
+      menos hora em cada um. Por isso o monotônico <code>h(Junior) ≥ h(Pleno) ≥ h(Senior)</code> é testado como
+      propriedade nos evals. Livro inteiro abaixo do nível do leitor gera plano vazio de 0 semanas — não é erro.</p>
+
+      <h3 id="calculo-cronograma">Do total de horas ao cronograma</h3>
+      <p><code>planejar()</code> enche semana por semana, na ordem dos capítulos. Um capítulo que não cabe no
+      que resta da semana <b>continua na semana seguinte</b> — sempre adjacente, nunca picado entre semanas
+      distantes:</p>
+      <div class="codeblock">
+<b>semanas</b>         = quantas semanas o empacotamento consumiu<br>
+<b>dias_por_semana</b> = min(7, teto(disponibilidade ÷ 2))   <i>// ~2h por sessão de estudo</i>
+      </div>
+      <p>O Junior do exemplo, com <b>6 h por semana</b> (note o capítulo 2 atravessando a virada da semana):</p>
+      <div class="codeblock">
+semana 1: 6.00 h → cap 1 (2.18 h), cap 2 (3.82 h)<br>
+semana 2: 4.21 h → cap 2 (0.11 h), cap 3 (4.09 h)
+      </div>
+      <p class="note"><code>dias_por_semana</code> depende só da disponibilidade, não do tamanho do plano — no
+      exemplo dá 3 para as três senioridades, porque <code>teto(6 ÷ 2) = 3</code>.</p>
+
+      <h3 id="calculo-sem-paginas">Quando o sumário não tem páginas</h3>
+      <p><code>calcular()</code> exige <code>cap.paginas</code> e levanta erro sem ele. Para sumário sem
+      paginação, duas funções preenchem esse número antes — a partir do total pesquisado na web (seção 03):</p>
+      <div class="codeblock">
+<b>paginas_de_conteudo</b>(total) = round(total × 0.92)  <i>// o resto é prefácio, apêndice e índice</i><br>
+<b>distribuir_paginas</b>()       <i>// reparte na proporção de (1 + nº de subtópicos), por maior resto</i>
+      </div>
+      <p>Com o total da web em <b>300 páginas</b> e os 3 capítulos do exemplo (2, 3 e 1 subtópicos):</p>
+      <div class="codeblock">
+conteúdo = round(300 × 0.92) = <b>276 páginas</b><br>
+pesos = [3, 4, 2] (soma 9) → 276×3/9, 276×4/9, 276×2/9 = 92.0, 122.67, 61.33<br>
+maior resto recebe a página que falta → <b>[92, 123, 61]</b>, soma exatamente 276
+      </div>
+      <p class="note">Essas páginas são <b>estimativa</b>, e o plano diz isso: <code>paginas.origem =
+      "pesquisa"</code>, mais a URL da fonte e a regra aplicada em <code>REGRA_DISTRIBUICAO</code>.</p>
+
+      <div class="callout">
+        <b>Para calibrar, não mexa no código:</b> todos os números desta seção vivem em
+        <code>config.yaml</code> (seção <code>calculo</code>). Mudá-los é <b>checkpoint 3</b> do
+        <code>CLAUDE.md</code> — é calibração, não implementação. O caminho previsto é anotar tempo real de
+        estudo em <code>evals/estudo.csv</code> e rodar <code>uv run python -m evals.comparar_estudo</code>,
+        que compara previsto × real e sugere um novo <code>min_pagina</code> sem aplicá-lo.
+      </div>
+    </section>
+
     <footer class="page">roadmap-backend · documentação gerada a partir do estado atual do código e das specs em <code>specs/</code> e <code>roadmapapi-spec.md</code></footer>
   </main>
 </div>
@@ -642,7 +782,8 @@ sequenceDiagram
         ["pesquisar()", "fn async, orquestra", "a função pública — decide se busca a web (cache por <code>chunk</code> existente) e monta a chamada ao LLM", true],
       ] },
     { id: "mod-calculo", file: "src/calculo.py", linhas: 154,
-      papel: "Python puro, sem I/O, sem LLM — a calculadora determinística que a spec exige. Toda constante vem de <code>config.yaml</code> via <code>config.calculo</code>.",
+      papel: "Python puro, sem I/O, sem LLM — a calculadora determinística que a spec exige. Toda constante vem de " +
+        "<code>config.yaml</code> via <code>config.calculo</code>. Passo a passo das fórmulas na <a href='#calculo'>seção 08</a>.",
       deps: "config.py, extracao.py, classificador.py (só os tipos)",
       entidades: [
         ["Fatores · HorasCapitulo · Excluido · Trecho · Semana · OrigemPaginas · Plano", "BaseModel", "a árvore de saída — ver diagrama de classes"],
