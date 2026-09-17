@@ -76,6 +76,32 @@ Depois de reiniciar a máquina, repita os passos 1 e 4.
 | Ollama | 11435 |
 | SearXNG | 8888 |
 
+## Baixar o sistema (Desligar)
+
+```bash
+# 1. API — no terminal onde ela está rodando
+Ctrl+C
+
+# 2. Postgres + Ollama + SearXNG
+docker compose stop
+```
+
+`docker compose stop` só **pausa** os 3 contêineres — os dados do Postgres (`pgdata`) e os
+modelos já baixados no Ollama (`ollama`) ficam guardados nos volumes. Na próxima vez, `docker
+compose up -d` sobe tudo de novo do jeito que estava, sem precisar baixar o modelo de novo.
+
+| Comando | O que faz | Quando usar |
+|---|---|---|
+| `docker compose stop` | Para os contêineres, mantém os volumes | Uso normal — pausar no fim do dia |
+| `docker compose down` | Remove os contêineres, mantém os volumes | Recriar os contêineres do zero (ex.: mudou o `docker-compose.yml`) |
+| `docker compose down -v` | Remove contêineres **e** volumes | ⚠️ Apaga o banco e os modelos baixados — só se quiser mesmo recomeçar do zero |
+
+Conferir que ficou tudo parado:
+
+```bash
+docker compose ps    # nenhum serviço listado como "Up"
+```
+
 ## Como usar
 
 1. **Envie o sumário** (`POST /books`). A resposta traz o `id` do livro e os capítulos extraídos.
