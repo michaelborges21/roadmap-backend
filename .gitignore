@@ -1,4 +1,5 @@
-/test_files/
+test_files
+test_files/
 .venv
 __pycache__/
 .pytest_cache/

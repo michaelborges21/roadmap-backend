@@ -81,7 +81,8 @@ do prazo (`semanas <= semanas_ate_o_prazo`).
 
 | Resposta | Quando |
 |---|---|
-| `201` | Roadmap criado. Na primeira vez para o livro, pesquisa na web e classifica (1 a 2 min com `gemma4:12b`); depois reaproveita as duas coisas. |
+| `201` | Roadmap criado de forma síncrona. Na primeira vez para o livro, pesquisa na web e classifica (1 a 2 min com `gemma4:12b`); depois reaproveita as duas coisas. |
+| `202` | Job assíncrono iniciado (quando solicitado via header `Prefer: respond-async` ou `?modo=async`). Retorna `Location: /jobs/{id}` e metadados do job no corpo. |
 | `404` | Livro inexistente. |
 | `422` | Livro sem sumário (só capa), sumário sem páginas e sem fonte confiável na web, ou pedido inválido. |
 | `502` / `503` | Falha do classificador ou da pesquisa (só na primeira vez para o livro). Pesquisa fora do ar só vira `503` se o sumário não tem páginas; com páginas, vira aviso. |
@@ -139,6 +140,18 @@ Só leem, recalculam ou removem o que já foi persistido; não chamam LLM nem we
 | `GET /roadmaps/{roadmap_id}` | `200` com o mesmo corpo do `POST /books/{id}/roadmaps`. `404` se não existe. |
 | `PATCH /roadmaps/{roadmap_id}` | `200` com o plano recalculado deterministicamente. Aceita `ajustes` (lista de `{num, nivel, peso, paginas}`), `senioridade`, `disponibilidade_horas` ou `data_limite`. Se `ajustes` for `[]`, restaura o cálculo original. `404` se não existe, `422` se capítulo não existe no livro ou ajuste for inválido. |
 | `DELETE /roadmaps/{roadmap_id}` | `204` sem corpo. `404` se não existe. O livro e sua classificação em cache não são afetados. |
+
+---
+
+## Jobs assíncronos (`/jobs/{id}`)
+
+Para evitar timeouts de rede (1 a 2 min no primeiro roadmap de um livro), a API suporta modo assíncrono com polling ([ADR 0005](adr/0005-jobs-assincronos-para-geracao-de-roadmap.md)).
+
+| Endpoint | Resposta | Descrição |
+|---|---|---|
+| `GET /jobs/{job_id}` | `200` | Retorna o status do job (`pendente`, `pesquisando`, `classificando`, `calculando`, `concluido`, `falhou`). Quando concluído, traz `roadmap_id` e o objeto completo em `roadmap`. |
+| `DELETE /jobs/{job_id}` | `204` | Cancela o processamento em segundo plano e remove o job. |
+| Ambos | `404` | Job inexistente ou já expirado pelo TTL de 1 hora. |
 
 ---
 

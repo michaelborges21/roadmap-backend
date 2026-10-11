@@ -1,6 +1,7 @@
 """Fluxo HTTP e base RAG da pesquisa contra o Postgres do compose, com LLM, web e embedding mockados.
 Skip se o banco estiver fora."""
 
+import asyncio
 import hashlib
 import uuid
 from collections.abc import AsyncIterator
@@ -549,5 +550,91 @@ async def test_ajustar_roadmap_recalcula_plano_determiniscamente(monkeypatch: py
                     f"/roadmaps/{base['id']}", json={"ajustes": [{"num": 1, "peso": 5.0}]}
                 )
             ).status_code == 422
+    finally:
+        await apagar([book.id])
+
+
+@pytest.mark.asyncio
+async def test_fluxo_job_assincrono_com_polling_e_cancelamento(monkeypatch: pytest.MonkeyPatch, banco: None):
+    async def classificar_fake(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
+        return CLS
+
+    async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "classificar", classificar_fake)
+    monkeypatch.setattr(main, "pesquisar", pesquisar_fake)
+
+    book = novo_book("Livro Jobs", CAPS, paginas_conteudo=60)
+    await criar(book)
+
+    try:
+        async with cliente() as http:
+            # 1. Validações imediatas síncronas antes de criar job
+            assert (await http.post("/books/999999999/roadmaps?modo=async", json=PEDIDO)).status_code == 404
+            assert (
+                await http.post(
+                    f"/books/{book.id}/roadmaps?modo=async",
+                    json={"senioridade": "Pleno", "data_limite": "2020-01-01"},
+                )
+            ).status_code == 422
+
+            # 2. Criar roadmap assíncrono via query param (?modo=async) -> 202 Accepted
+            r_async = await http.post(f"/books/{book.id}/roadmaps?modo=async", json=PEDIDO)
+            assert r_async.status_code == 202
+            loc = r_async.headers.get("Location")
+            assert loc and loc.startswith("/jobs/")
+            job_data = r_async.json()
+            job_id = job_data["id"]
+            assert job_data["book_id"] == book.id
+
+            # 3. Polling em GET /jobs/{job_id} até conclusão
+            concluido = False
+            dados = {}
+            for _ in range(30):
+                r_job = await http.get(f"/jobs/{job_id}")
+                assert r_job.status_code == 200
+                dados = r_job.json()
+                if dados["status"] == "concluido":
+                    concluido = True
+                    assert dados["roadmap_id"] is not None
+                    assert dados["roadmap"]["total_horas"] > 0
+                    break
+                await asyncio.sleep(0.05)
+            assert concluido, f"Job não concluiu a tempo: {dados}"
+
+            # Verificar que o roadmap criado pelo job pode ser consultado normalmente
+            r_rm = await http.get(f"/roadmaps/{dados['roadmap_id']}")
+            assert r_rm.status_code == 200
+            assert r_rm.json()["id"] == dados["roadmap_id"]
+
+            # 4. Criar roadmap assíncrono via cabeçalho Prefer: respond-async (RFC 7240)
+            r_pref = await http.post(
+                f"/books/{book.id}/roadmaps",
+                json=PEDIDO,
+                headers={"Prefer": "respond-async"},
+            )
+            assert r_pref.status_code == 202
+            job_pref_id = r_pref.json()["id"]
+
+            concluido_pref = False
+            for _ in range(30):
+                r_job_pref = await http.get(f"/jobs/{job_pref_id}")
+                if r_job_pref.json()["status"] == "concluido":
+                    concluido_pref = True
+                    break
+                await asyncio.sleep(0.05)
+            assert concluido_pref
+
+            # 5. Cancelamento via DELETE /jobs/{job_id}
+            from src.jobs import gerenciador_jobs
+            job_cancel = gerenciador_jobs.criar_job(book.id)
+            r_del = await http.delete(f"/jobs/{job_cancel.id}")
+            assert r_del.status_code == 204
+            assert (await http.get(f"/jobs/{job_cancel.id}")).status_code == 404
+
+            # 6. Rotas de erro em jobs
+            assert (await http.get("/jobs/nao-existe")).status_code == 404
+            assert (await http.delete("/jobs/nao-existe")).status_code == 404
     finally:
         await apagar([book.id])

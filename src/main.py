@@ -1,9 +1,9 @@
 import asyncio
 import hashlib
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
@@ -39,8 +39,9 @@ from src.classificador import (
     versao_classificacao,
 )
 from src.config import config, settings
-from src.db import get_session
+from src.db import Session, get_session
 from src.extracao import Capitulo, ExtracaoAmbigua, Extraido, extrair, extrair_texto
+from src.jobs import Job, StatusJob, gerenciador_jobs
 from src.models import Book, Roadmap
 from src.pesquisa import Pesquisa, PesquisaIndisponivel, pesquisar, versao_pesquisa
 
@@ -206,8 +207,16 @@ def resolver_paginas(
     return capitulos, origem, avisos
 
 
-@app.post("/books/{book_id}/roadmaps", status_code=201)
-async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep) -> RoadmapCriado:
+async def gerar_roadmap(
+    session: AsyncSession,
+    book_id: int,
+    pedido: PedidoRoadmap,
+    on_progresso: Callable[[StatusJob, str], Any] | None = None,
+) -> RoadmapCriado:
+    def notificar(status: StatusJob, etapa: str) -> None:
+        if on_progresso:
+            on_progresso(status, etapa)
+
     semanas_prazo = semanas_ate(pedido.data_limite, hoje()) if pedido.data_limite else None
     if semanas_prazo == 0:  # antes de qualquer trabalho caro (pesquisa, LLM)
         raise HTTPException(422, "A data_limite precisa ser futura.")
@@ -227,6 +236,7 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
 
     # Uma vez por livro e por versão (prompt + modelos): mudou o prompt ou o modelo, o cache antigo é refeito.
     # Os trechos da web ficam na base RAG, então refazer não volta à web.
+    notificar("pesquisando", "Pesquisando páginas e metadados do livro na web...")
     if book.pesquisa is None or book.pesquisa.get("versao") != versao_pesquisa():
         try:
             achado = await pesquisar(session, book, capitulos)
@@ -246,10 +256,13 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
     capitulos, origem, avisos_paginas = resolver_paginas(capitulos, book.paginas_conteudo, pesquisa)
     avisos += avisos_paginas
 
+    notificar("classificando", "Classificando tópicos dos capítulos com LLM...")
     if book.classificacao is None or book.classificacao.get("versao") != versao_classificacao():
         # Cache entre usuários: classifica uma vez por livro e por versão (prompt + modelo).
         book.classificacao = {**(await classificar(book.titulo, capitulos)).model_dump(), "versao": versao_classificacao()}
     cls = Classificacao.model_validate(book.classificacao)
+
+    notificar("calculando", "Calculando cronograma e distribuição de horas...")
     if pedido.ajustes:
         nums_livro = {c.num for c in capitulos}
         for a in pedido.ajustes:
@@ -281,6 +294,73 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
     session.add(roadmap)
     await session.commit()
     return RoadmapCriado(id=roadmap.id, book_id=book.id, **plano.model_dump())
+
+
+@app.post("/books/{book_id}/roadmaps", status_code=201, responses={202: {"model": Job}})
+async def criar_roadmap(
+    book_id: int,
+    pedido: PedidoRoadmap,
+    session: SessionDep,
+    request: Request,
+    response: Response,
+    modo: str | None = None,
+) -> RoadmapCriado | Job:
+    semanas_prazo = semanas_ate(pedido.data_limite, hoje()) if pedido.data_limite else None
+    if semanas_prazo == 0:
+        raise HTTPException(422, "A data_limite precisa ser futura.")
+
+    eh_async = modo == "async" or "respond-async" in request.headers.get("prefer", "").lower()
+    if eh_async:
+        book = await session.get(Book, book_id)
+        if not book:
+            raise HTTPException(404, "Livro não encontrado.")
+        if not book.capitulos:
+            raise HTTPException(422, "Livro sem sumário: envie o PDF do sumário para gerar o cronograma.")
+
+        job = gerenciador_jobs.criar_job(book_id)
+
+        async def _executar_job(jid: str) -> None:
+            async with Session() as bg_session:
+                try:
+                    resultado = await gerar_roadmap(
+                        bg_session,
+                        book_id,
+                        pedido,
+                        on_progresso=lambda st, etapa: gerenciador_jobs.atualizar_job(jid, st, etapa),
+                    )
+                    gerenciador_jobs.atualizar_job(
+                        jid,
+                        "concluido",
+                        "Cronograma gerado com sucesso",
+                        roadmap_id=resultado.id,
+                        roadmap=resultado.model_dump(mode="json"),
+                    )
+                except HTTPException as exc:
+                    gerenciador_jobs.atualizar_job(jid, "falhou", str(exc.detail), erro=str(exc.detail))
+                except Exception as exc:
+                    gerenciador_jobs.atualizar_job(jid, "falhou", f"Falha no processamento: {exc}", erro=str(exc))
+
+        gerenciador_jobs.iniciar_tarefa(job.id, _executar_job)
+        response.status_code = 202
+        response.headers["Location"] = f"/jobs/{job.id}"
+        return job
+
+    return await gerar_roadmap(session, book_id, pedido)
+
+
+@app.get("/jobs/{job_id}")
+async def obter_job(job_id: str) -> Job:
+    job = gerenciador_jobs.obter_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado.")
+    return job
+
+
+@app.delete("/jobs/{job_id}", status_code=204)
+async def cancelar_job(job_id: str) -> None:
+    sucesso = gerenciador_jobs.cancelar_job(job_id)
+    if not sucesso:
+        raise HTTPException(404, "Job não encontrado.")
 
 
 class RoadmapResumo(BaseModel):
