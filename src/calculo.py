@@ -1,5 +1,6 @@
 """Calculadora e cronograma (spec 2.7–2.9). Python puro e determinístico."""
 
+from datetime import date
 from math import ceil
 from typing import Literal, get_args
 
@@ -67,6 +68,13 @@ class OrigemPaginas(BaseModel):
     regra: str | None = None
 
 
+class Meta(BaseModel):
+    """Roadmap pedido por prazo: a disponibilidade foi calculada, não informada."""
+
+    data_limite: date
+    semanas_ate_o_prazo: int
+
+
 class Plano(BaseModel):
     senioridade: Senioridade
     disponibilidade_horas: float
@@ -78,6 +86,20 @@ class Plano(BaseModel):
     cronograma: list[Semana]
     paginas: OrigemPaginas | None = None  # None em roadmaps criados antes da pesquisa de fatos
     avisos: list[str] = []
+    meta: Meta | None = None  # None quando o leitor informou as horas por semana
+
+
+def semanas_ate(data_limite: date, hoje: date) -> int:
+    """Semanas inteiras (arredondadas para cima) de hoje até a data limite; 0 se a data não é futura."""
+    return max(0, ceil((data_limite - hoje).days / 7))
+
+
+def disponibilidade_para_prazo(total_horas: float, semanas: int) -> float:
+    """Menor disponibilidade semanal (em centésimos de hora, para cima) que fecha o total em `semanas`.
+
+    O total de horas não depende da disponibilidade, então o prazo inverte direto: `total / semanas`.
+    """
+    return ceil(total_horas / semanas * 100) / 100
 
 
 def paginas_de_conteudo(paginas_totais: int) -> int:

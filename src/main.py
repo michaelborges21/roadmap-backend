@@ -1,7 +1,7 @@
 import asyncio
 import hashlib
 from collections.abc import Awaitable
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -9,19 +9,22 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.calculo import (
     REGRA_DISTRIBUICAO,
+    Meta,
     OrigemPaginas,
     Plano,
     Senioridade,
+    disponibilidade_para_prazo,
     distribuir_paginas,
     paginas_de_conteudo,
     planejar,
+    semanas_ate,
 )
 from src.classificador import (
     Classificacao,
@@ -101,7 +104,14 @@ class BookCriado(Extraido):
 
 class PedidoRoadmap(BaseModel):
     senioridade: Senioridade
-    disponibilidade_horas: float = Field(gt=0, le=168)
+    disponibilidade_horas: float | None = Field(default=None, gt=0, le=168)
+    data_limite: date | None = None
+
+    @model_validator(mode="after")
+    def um_dos_dois(self) -> "PedidoRoadmap":
+        if (self.disponibilidade_horas is None) == (self.data_limite is None):
+            raise ValueError("Informe disponibilidade_horas ou data_limite, e só um dos dois.")
+        return self
 
 
 class RoadmapCriado(Plano):
@@ -153,6 +163,10 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
     return BookCriado(**extraido, id=book.id, falta_sumario=not book.capitulos)
 
 
+def hoje() -> date:
+    return date.today()
+
+
 def resolver_paginas(
     capitulos: list[Capitulo], paginas_sumario: int | None, pesquisa: Pesquisa | None
 ) -> tuple[list[Capitulo], OrigemPaginas, list[str]]:
@@ -188,6 +202,9 @@ def resolver_paginas(
 
 @app.post("/books/{book_id}/roadmaps", status_code=201)
 async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep) -> RoadmapCriado:
+    semanas_prazo = semanas_ate(pedido.data_limite, hoje()) if pedido.data_limite else None
+    if semanas_prazo == 0:  # antes de qualquer trabalho caro (pesquisa, LLM)
+        raise HTTPException(422, "A data_limite precisa ser futura.")
     # Um roadmap por vez para o mesmo livro: o segundo pedido espera o primeiro gravar pesquisa e classificação
     # e as reaproveita, em vez de repetir a chamada ao LLM. Preso à transação: o commit (ou o rollback, ou a
     # queda da conexão) libera. Vem antes do get e com populate_existing, para ler o que o outro pedido gravou.
@@ -226,13 +243,26 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
     if book.classificacao is None or book.classificacao.get("versao") != versao_classificacao():
         # Cache entre usuários: classifica uma vez por livro e por versão (prompt + modelo).
         book.classificacao = {**(await classificar(book.titulo, capitulos)).model_dump(), "versao": versao_classificacao()}
-    plano = planejar(capitulos, Classificacao.model_validate(book.classificacao), pedido.senioridade, pedido.disponibilidade_horas)
-    plano = plano.model_copy(update={"paginas": origem, "avisos": avisos})
+    cls = Classificacao.model_validate(book.classificacao)
+    disponibilidade = pedido.disponibilidade_horas
+    meta = None
+    if disponibilidade is None:
+        assert pedido.data_limite and semanas_prazo  # garantido pelo validador e pelo 422 acima
+        # O total de horas não depende da disponibilidade: calcula com qualquer valor e inverte pelo prazo.
+        total = planejar(capitulos, cls, pedido.senioridade, 1.0).total_horas
+        disponibilidade = disponibilidade_para_prazo(total, semanas_prazo) if total else 0.0
+        if disponibilidade > 168:
+            raise HTTPException(
+                422, f"Prazo inviável: exigiria {disponibilidade:g} h/semana ({total:.1f} h em {semanas_prazo} semana(s)); o máximo é 168."
+            )
+        meta = Meta(data_limite=pedido.data_limite, semanas_ate_o_prazo=semanas_prazo)
+    plano = planejar(capitulos, cls, pedido.senioridade, disponibilidade)
+    plano = plano.model_copy(update={"paginas": origem, "avisos": avisos, "meta": meta})
 
     roadmap = Roadmap(
         book_id=book.id,
         senioridade=pedido.senioridade,
-        disponibilidade_horas=pedido.disponibilidade_horas,
+        disponibilidade_horas=disponibilidade,
         plano=plano.model_dump(mode="json"),
     )
     session.add(roadmap)

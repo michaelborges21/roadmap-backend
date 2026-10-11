@@ -68,6 +68,7 @@ referência apontar para teste inexistente ou se um RF ficar sem teste.
 | RF-API-03 | `GET /roadmaps/{id}/explicar`: o LLM redige a partir dos fatores persistidos ou do motivo da exclusão; `404` para capítulo inexistente. | `tests/test_api.py::test_fluxo_roadmap`, `tests/test_classificador.py::test_explicar_recebe_dados_calculados` |
 | RF-API-04 | `GET /health`: `200` se Postgres, Ollama e SearXNG respondem dentro de `api.health_timeout_s`; `503` com o estado de cada um caso contrário. Subclasse de erro de domínio herda o status do pai. | `tests/test_robustez.py::test_health_200_com_tudo_ok_e_503_com_dependencia_fora`, `tests/test_robustez.py::test_subclasse_de_erro_de_dominio_herda_o_status` |
 | RF-API-05 | `GET /books/{id}/roadmaps` lista os roadmaps do livro (mais recente primeiro); `GET /roadmaps/{id}` devolve o mesmo plano do `POST`; `DELETE /roadmaps/{id}` responde `204`. `404` para livro ou roadmap inexistente. Nenhum chama LLM nem web. | `tests/test_api.py::test_listar_obter_e_apagar_roadmap` |
+| RF-API-06 | `POST /books/{id}/roadmaps` aceita `data_limite` no lugar de `disponibilidade_horas` (exatamente um dos dois). A disponibilidade é a menor, em centésimos de hora, que fecha o total nas semanas até o prazo; o plano traz `meta`. `422` se a data não é futura ou se exigir mais de 168 h/semana. | `tests/test_api.py::test_roadmap_por_data_limite_calcula_a_disponibilidade`, `tests/test_calculo.py::test_prazo_inverte_o_calculo_e_fecha_dentro_das_semanas` |
 
 ## Não funcionais
 

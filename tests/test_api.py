@@ -401,3 +401,49 @@ async def test_roadmaps_simultaneos_do_mesmo_livro_classificam_e_pesquisam_uma_v
             assert asyncio.get_running_loop().time() - inicio < 1.15
     finally:
         await apagar([mesmo.id, mesmo_2.id, outro.id])
+
+
+@pytest.mark.asyncio
+async def test_roadmap_por_data_limite_calcula_a_disponibilidade(monkeypatch: pytest.MonkeyPatch, banco: None):
+    from datetime import date, timedelta
+
+    hoje = date(2026, 10, 12)
+    monkeypatch.setattr(main, "hoje", lambda: hoje)
+    monkeypatch.setattr(main, "classificar", classificar_fake)
+
+    async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "pesquisar", pesquisar_fake)
+    grandes = [Capitulo(num=i, titulo=f"Cap {i}", pag_inicio=i, paginas=5000).model_dump() for i in (1, 2, 3)]
+    book, enorme = novo_book("Livro", CAPS, paginas_conteudo=60), novo_book("Livro enorme", grandes, paginas_conteudo=15000)
+    await criar(book, enorme)
+    limite = lambda dias: (hoje + timedelta(days=dias)).isoformat()  # noqa: E731
+
+    try:
+        async with cliente() as http:
+            r = await http.post(f"/books/{book.id}/roadmaps", json={"senioridade": "Junior", "data_limite": limite(28)})
+            assert r.status_code == 201, r.text
+            plano = r.json()
+            assert plano["meta"] == {"data_limite": limite(28), "semanas_ate_o_prazo": 4}
+            assert 0 < plano["semanas"] <= 4  # cabe no prazo
+            assert plano["disponibilidade_horas"] == pytest.approx(plano["total_horas"] / 4, abs=0.01)
+            assert plano["disponibilidade_horas"] >= plano["total_horas"] / 4  # arredondou para cima, nunca para baixo
+
+            fixo = await http.post(f"/books/{book.id}/roadmaps", json={"senioridade": "Junior", "disponibilidade_horas": 5})
+            assert fixo.json()["meta"] is None
+            assert (await http.get(f"/roadmaps/{plano['id']}")).json() == plano  # persistido junto com o plano
+
+            invalidos = [
+                {"senioridade": "Junior"},  # nenhum dos dois
+                {"senioridade": "Junior", "disponibilidade_horas": 5, "data_limite": limite(28)},  # os dois
+                {"senioridade": "Junior", "data_limite": hoje.isoformat()},  # hoje não é futuro
+                {"senioridade": "Junior", "data_limite": limite(-3)},  # passado
+            ]
+            for corpo in invalidos:
+                assert (await http.post(f"/books/{book.id}/roadmaps", json=corpo)).status_code == 422, corpo
+
+            inviavel = await http.post(f"/books/{enorme.id}/roadmaps", json={"senioridade": "Junior", "data_limite": limite(1)})
+            assert inviavel.status_code == 422 and "inviável" in inviavel.json()["detail"]
+    finally:
+        await apagar([book.id, enorme.id])

@@ -70,6 +70,14 @@ Exemplo ilustrativo (lista abreviada):
 |---|---|
 | `senioridade` | `"Junior"`, `"Pleno"` ou `"Senior"`. |
 | `disponibilidade_horas` | Horas por semana, `0 < x <= 168`. |
+| `data_limite` | Alternativa a `disponibilidade_horas` (`"2026-12-20"`): informe **um dos dois**, nunca os dois nem nenhum (`422`). Deve ser futura. |
+
+Com `data_limite`, o servidor calcula a menor disponibilidade semanal (arredondada para cima, em
+centésimos de hora) que fecha o total de horas nas semanas até o prazo (`ceil(dias / 7)`). O plano
+devolve essa disponibilidade em `disponibilidade_horas` e traz `meta`:
+`{"data_limite": "2026-12-20", "semanas_ate_o_prazo": 10}`. Com horas informadas, `meta` é `null`.
+Prazo que exigiria mais de 168 h/semana → `422` ("Prazo inviável"). O cronograma pode terminar antes
+do prazo (`semanas <= semanas_ate_o_prazo`).
 
 | Resposta | Quando |
 |---|---|

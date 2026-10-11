@@ -80,3 +80,20 @@ def test_cronograma_coerente():
         semanas = [s for _, s, _ in itens]
         assert semanas == list(range(semanas[0], semanas[0] + len(semanas)))  # só semanas adjacentes
         assert sum(h for _, _, h in itens) == pytest.approx(plano.capitulos[num - 1].total)
+
+
+def test_prazo_inverte_o_calculo_e_fecha_dentro_das_semanas():
+    from datetime import date
+    from math import ceil
+
+    from src.calculo import disponibilidade_para_prazo, semanas_ate
+
+    hoje = date(2026, 10, 12)
+    assert semanas_ate(date(2026, 10, 12), hoje) == 0  # hoje não é prazo
+    assert semanas_ate(date(2026, 10, 1), hoje) == 0  # passado
+    assert (semanas_ate(date(2026, 10, 13), hoje), semanas_ate(date(2026, 10, 19), hoje), semanas_ate(date(2026, 10, 20), hoje)) == (1, 1, 2)
+
+    for total, semanas in [(31.7, 6), (10.0, 3), (0.5, 8), (103.59, 12), (7.0, 7)]:
+        disp = disponibilidade_para_prazo(total, semanas)
+        assert ceil(total / disp - 1e-9) <= semanas  # cabe no prazo
+        assert disp - 0.01 < total / semanas  # e não sobra mais que um centésimo de hora
