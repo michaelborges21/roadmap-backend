@@ -21,7 +21,21 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "mypy>=2.4.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.0",
+    "types-pyyaml>=6.0.12.20260906",
 ]
+
+[tool.ruff]
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# Estilo existente do projeto: linhas longas em testes e `l` como variável de laço curto.
+ignore = ["E501", "E741"]
+
+[tool.mypy]
+python_version = "3.12"

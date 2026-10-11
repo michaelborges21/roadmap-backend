@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: roadmap
+          POSTGRES_PASSWORD: roadmap
+          POSTGRES_DB: roadmap
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U roadmap"
+          --health-interval 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests evals conftest.py
+      - run: uv run mypy src
+      - run: uv run alembic upgrade head
+      # Suíte padrão: LLM, web e embedding mockados (RNF-04). Os evals (-m eval) ficam de fora.
+      - run: uv run pytest --cov=src --cov-report=term-missing

@@ -177,8 +177,8 @@ def titulo_cabecalho(paginas: list[list[str]]) -> str | None:
         and (texto := re.sub(r"^\d+\s*\|?\s*|\s*\|?\s*\d+$", "", pag[0]).strip())
         and not ANCORA.match(texto)
     )
-    texto, repeticoes = next(iter(candidatos.most_common(1)), (None, 0))
-    return texto if repeticoes >= 2 else None
+    mais_comum, repeticoes = next(iter(candidatos.most_common(1)), (None, 0))
+    return mais_comum if repeticoes >= 2 else None
 
 
 def titulo_cip(linhas: list[str]) -> str | None:
