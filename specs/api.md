@@ -8,6 +8,7 @@ Erros de domínio respondem `{"detail": "<mensagem legível>"}`. Erros de valida
 
 | Código | Significado |
 |---|---|
+| `413` | Arquivo acima de `api.upload_max_mb` (`config.yaml`). |
 | `415` | Tipo de arquivo não suportado. |
 | `422` | Extração ambígua, livro sem sumário, sumário sem páginas sem fonte confiável na web, ou pedido inválido. Nunca um número silenciosamente errado. |
 | `502` | O LLM respondeu fora do contrato (schema, capítulo faltando, resposta cortada). |
@@ -33,6 +34,7 @@ paginação (e-book, página de loja, texto digitado). Sem paginação, os capí
 |---|---|
 | `201` | Livro criado. |
 | `200` | Mesmo arquivo já enviado (cache por SHA-256 do conteúdo, entre usuários). |
+| `413` | Arquivo acima do limite de tamanho. |
 | `415` | Outro tipo de arquivo. |
 | `422` | Extração ambígua (ver RF-EXT-07). |
 | `502` / `503` | Só para imagem de capa. |
@@ -119,6 +121,18 @@ Exemplo ilustrativo do formato (valores não vêm de uma execução real):
 
 ---
 
+## Consultar e apagar roadmaps
+
+Só leem ou removem o que já foi persistido; não chamam LLM nem web.
+
+| Endpoint | Resposta |
+|---|---|
+| `GET /books/{book_id}/roadmaps` | `200` com lista de `{id, senioridade, disponibilidade_horas, total_horas, semanas, criado_em}`, mais recente primeiro. `404` se o livro não existe. |
+| `GET /roadmaps/{roadmap_id}` | `200` com o mesmo corpo do `POST /books/{id}/roadmaps`. `404` se não existe. |
+| `DELETE /roadmaps/{roadmap_id}` | `204` sem corpo. `404` se não existe. O livro e sua classificação em cache não são afetados. |
+
+---
+
 ## `GET /roadmaps/{roadmap_id}/explicar?capitulo=N`
 
 Responde "por que esse capítulo deu X horas?" (ou "por que ficou de fora?"). O LLM só redige; os
@@ -129,6 +143,17 @@ números vêm dos `fatores` persistidos no roadmap.
 | `200` | `{"explicacao": "..."}` |
 | `404` | Roadmap inexistente, ou capítulo fora do livro/roadmap. |
 | `502` / `503` | Falha do LLM. |
+
+---
+
+## `GET /health`
+
+Verifica Postgres, Ollama e SearXNG, cada um com timeout `api.health_timeout_s`.
+
+| Resposta | Quando |
+|---|---|
+| `200` | `{"status": "ok", "postgres": "ok", "ollama": "ok", "searxng": "ok"}` |
+| `503` | `{"status": "degradado", ...}` com `"fora: <erro>"` na(s) dependência(s) que falharam. |
 
 ---
 
