@@ -129,14 +129,15 @@ Exemplo ilustrativo do formato (valores não vêm de uma execução real):
 
 ---
 
-## Consultar e apagar roadmaps
+## Consultar, ajustar e apagar roadmaps
 
-Só leem ou removem o que já foi persistido; não chamam LLM nem web.
+Só leem, recalculam ou removem o que já foi persistido; não chamam LLM nem web.
 
 | Endpoint | Resposta |
 |---|---|
 | `GET /books/{book_id}/roadmaps` | `200` com lista de `{id, senioridade, disponibilidade_horas, total_horas, semanas, criado_em}`, mais recente primeiro. `404` se o livro não existe. |
 | `GET /roadmaps/{roadmap_id}` | `200` com o mesmo corpo do `POST /books/{id}/roadmaps`. `404` se não existe. |
+| `PATCH /roadmaps/{roadmap_id}` | `200` com o plano recalculado deterministicamente. Aceita `ajustes` (lista de `{num, nivel, peso, paginas}`), `senioridade`, `disponibilidade_horas` ou `data_limite`. Se `ajustes` for `[]`, restaura o cálculo original. `404` se não existe, `422` se capítulo não existe no livro ou ajuste for inválido. |
 | `DELETE /roadmaps/{roadmap_id}` | `204` sem corpo. `404` se não existe. O livro e sua classificação em cache não são afetados. |
 
 ---

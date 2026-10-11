@@ -447,3 +447,107 @@ async def test_roadmap_por_data_limite_calcula_a_disponibilidade(monkeypatch: py
             assert inviavel.status_code == 422 and "inviável" in inviavel.json()["detail"]
     finally:
         await apagar([book.id, enorme.id])
+
+
+@pytest.mark.asyncio
+async def test_ajustar_roadmap_recalcula_plano_determiniscamente(monkeypatch: pytest.MonkeyPatch, banco: None):
+    monkeypatch.setattr(main, "classificar", classificar_fake)
+
+    async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "pesquisar", pesquisar_fake)
+    book = novo_book("Livro", CAPS, paginas_conteudo=60)
+    await criar(book)
+
+    try:
+        async with cliente() as http:
+            # 1. Criação inicial: Pleno inclui cap 2 e 3; cap 1 (iniciante) fica excluído
+            r = await http.post(f"/books/{book.id}/roadmaps", json={"senioridade": "Pleno", "disponibilidade_horas": 5})
+            assert r.status_code == 201
+            base = r.json()
+            assert [c["num"] for c in base["capitulos"]] == [2, 3]
+            assert [e["num"] for e in base["excluidos"]] == [1]
+            assert base["ajustes"] == []
+
+            # 2. PATCH ajusta nível do cap 1 para 'intermediario': cap 1 entra no cronograma!
+            r_patch = await http.patch(
+                f"/roadmaps/{base['id']}",
+                json={"ajustes": [{"num": 1, "nivel": "intermediario"}]},
+            )
+            assert r_patch.status_code == 200
+            ajustado = r_patch.json()
+            assert [c["num"] for c in ajustado["capitulos"]] == [1, 2, 3]
+            assert ajustado["excluidos"] == []
+            assert ajustado["total_horas"] > base["total_horas"]
+            assert len(ajustado["ajustes"]) == 1
+            assert ajustado["ajustes"][0]["num"] == 1
+            assert ajustado["ajustes"][0]["nivel"] == "intermediario"
+
+            # 3. PATCH ajusta peso e páginas: horas recalculadas deterministicamente
+            r_horas = await http.patch(
+                f"/roadmaps/{base['id']}",
+                json={"ajustes": [{"num": 2, "peso": 2.0}, {"num": 3, "paginas": 40}]},
+            )
+            assert r_horas.status_code == 200
+            h_data = r_horas.json()
+            cap2 = next(c for c in h_data["capitulos"] if c["num"] == 2)
+            cap3 = next(c for c in h_data["capitulos"] if c["num"] == 3)
+            base_cap2 = next(c for c in base["capitulos"] if c["num"] == 2)
+            base_cap3 = next(c for c in base["capitulos"] if c["num"] == 3)
+            # peso 2.0 vs 1.0 dobra o tempo do cap 2
+            assert cap2["total"] == pytest.approx(base_cap2["total"] * 2.0, rel=1e-3)
+            # páginas 40 vs 20 dobra o tempo do cap 3
+            assert cap3["total"] == pytest.approx(base_cap3["total"] * 2.0, rel=1e-3)
+
+            # 4. PATCH com ajustes: [] remove ajustes e volta ao original
+            r_reset = await http.patch(f"/roadmaps/{base['id']}", json={"ajustes": []})
+            assert r_reset.status_code == 200
+            assert r_reset.json()["total_horas"] == pytest.approx(base["total_horas"], rel=1e-3)
+            assert r_reset.json()["ajustes"] == []
+
+            # 5. PATCH alterando disponibilidade_horas e senioridade
+            r_mudanca = await http.patch(
+                f"/roadmaps/{base['id']}", json={"senioridade": "Senior", "disponibilidade_horas": 10}
+            )
+            assert r_mudanca.status_code == 200
+            assert r_mudanca.json()["senioridade"] == "Senior"
+            assert r_mudanca.json()["disponibilidade_horas"] == 10
+            # Senior só inclui cap 3 (avançado)
+            assert [c["num"] for c in r_mudanca.json()["capitulos"]] == [3]
+
+            # 6. POST direto com ajustes manuais já na criação
+            r_post_ajuste = await http.post(
+                f"/books/{book.id}/roadmaps",
+                json={
+                    "senioridade": "Pleno",
+                    "disponibilidade_horas": 5,
+                    "ajustes": [{"num": 1, "nivel": "intermediario", "paginas": 30}],
+                },
+            )
+            assert r_post_ajuste.status_code == 201
+            assert [c["num"] for c in r_post_ajuste.json()["capitulos"]] == [1, 2, 3]
+
+            # 7. Validações e erros
+            assert (await http.patch("/roadmaps/999999999", json={"ajustes": []})).status_code == 404
+            # Capítulo inexistente
+            r_inexistente = await http.patch(
+                f"/roadmaps/{base['id']}", json={"ajustes": [{"num": 99, "peso": 1.5}]}
+            )
+            assert r_inexistente.status_code == 422 and "não existe" in r_inexistente.json()["detail"]
+            # Capítulo duplicado na lista
+            r_duplicado = await http.patch(
+                f"/roadmaps/{base['id']}",
+                json={"ajustes": [{"num": 1, "peso": 1.2}, {"num": 1, "peso": 1.5}]},
+            )
+            assert r_duplicado.status_code == 422
+            # Corpo vazio sem nenhum campo informado
+            assert (await http.patch(f"/roadmaps/{base['id']}", json={})).status_code == 422
+            # Peso fora dos limites permitidos (0.5 a 2.0)
+            assert (
+                await http.patch(
+                    f"/roadmaps/{base['id']}", json={"ajustes": [{"num": 1, "peso": 5.0}]}
+                )
+            ).status_code == 422
+    finally:
+        await apagar([book.id])

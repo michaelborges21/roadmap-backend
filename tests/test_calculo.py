@@ -97,3 +97,40 @@ def test_prazo_inverte_o_calculo_e_fecha_dentro_das_semanas():
         disp = disponibilidade_para_prazo(total, semanas)
         assert ceil(total / disp - 1e-9) <= semanas  # cabe no prazo
         assert disp - 0.01 < total / semanas  # e não sobra mais que um centésimo de hora
+
+
+def test_aplicar_ajustes_modifica_capitulos_e_classificacao():
+    from src.calculo import AjusteCapitulo, aplicar_ajustes
+
+    capitulos = caps(20, 30, 40)
+    classificacao = cls(("iniciante", "intermediario", "avancado"))
+
+    ajustes = [
+        AjusteCapitulo(num=1, nivel="intermediario", paginas=25),
+        AjusteCapitulo(num=2, peso=1.5),
+    ]
+
+    novos_caps, nova_cls = aplicar_ajustes(capitulos, classificacao, ajustes)
+
+    # Capítulo 1 teve nível e páginas alterados
+    assert novos_caps[0].paginas == 25
+    assert nova_cls.capitulos[0].nivel == "intermediario"
+    assert nova_cls.capitulos[0].peso == 1.0  # peso preservado
+
+    # Capítulo 2 teve apenas peso alterado
+    assert novos_caps[1].paginas == 30
+    assert nova_cls.capitulos[1].nivel == "intermediario"
+    assert nova_cls.capitulos[1].peso == 1.5
+
+    # Capítulo 3 não foi alterado
+    assert novos_caps[2].paginas == 40
+    assert nova_cls.capitulos[2].nivel == "avancado"
+    assert nova_cls.capitulos[2].peso == 1.0
+
+    # Capítulo inexistente gera ValueError
+    with pytest.raises(ValueError, match="não existe no livro"):
+        aplicar_ajustes(capitulos, classificacao, [AjusteCapitulo(num=99, peso=1.2)])
+
+    # Ajuste sem nenhum campo para alterar é rejeitado pelo Pydantic
+    with pytest.raises(ValueError, match="pelo menos um campo"):
+        AjusteCapitulo(num=1)

@@ -4,7 +4,7 @@ from datetime import date
 from math import ceil
 from typing import Literal, get_args
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from src.classificador import Classificacao, Nivel
 from src.config import config
@@ -75,6 +75,19 @@ class Meta(BaseModel):
     semanas_ate_o_prazo: int
 
 
+class AjusteCapitulo(BaseModel):
+    num: int
+    nivel: Nivel | None = None
+    peso: float | None = Field(default=None, ge=0.5, le=2.0)
+    paginas: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def pelo_menos_um(self) -> "AjusteCapitulo":
+        if self.nivel is None and self.peso is None and self.paginas is None:
+            raise ValueError("Informe pelo menos um campo para ajustar (nivel, peso ou paginas).")
+        return self
+
+
 class Plano(BaseModel):
     senioridade: Senioridade
     disponibilidade_horas: float
@@ -87,6 +100,42 @@ class Plano(BaseModel):
     paginas: OrigemPaginas | None = None  # None em roadmaps criados antes da pesquisa de fatos
     avisos: list[str] = []
     meta: Meta | None = None  # None quando o leitor informou as horas por semana
+    ajustes: list[AjusteCapitulo] = []
+
+
+def aplicar_ajustes(
+    capitulos: list[Capitulo],
+    cls: Classificacao,
+    ajustes: list[AjusteCapitulo],
+) -> tuple[list[Capitulo], Classificacao]:
+    """Aplica ajustes manuais de páginas aos capítulos e de nível/peso à classificação (Python puro)."""
+    nums_validos = {c.num for c in capitulos}
+    for a in ajustes:
+        if a.num not in nums_validos:
+            raise ValueError(f"Capítulo {a.num} não existe no livro.")
+
+    mapa_ajustes = {a.num: a for a in ajustes}
+    novos_caps = []
+    for c in capitulos:
+        if c.num in mapa_ajustes and mapa_ajustes[c.num].paginas is not None:
+            c = c.model_copy(update={"paginas": mapa_ajustes[c.num].paginas})
+        novos_caps.append(c)
+
+    novos_julgados = []
+    for j in cls.capitulos:
+        if j.num in mapa_ajustes:
+            aj = mapa_ajustes[j.num]
+            update: dict[str, object] = {}
+            if aj.nivel is not None:
+                update["nivel"] = aj.nivel
+            if aj.peso is not None:
+                update["peso"] = aj.peso
+            if update:
+                j = j.model_copy(update=update)
+        novos_julgados.append(j)
+
+    nova_cls = cls.model_copy(update={"capitulos": novos_julgados})
+    return novos_caps, nova_cls
 
 
 def semanas_ate(data_limite: date, hoje: date) -> int:

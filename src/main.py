@@ -16,10 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.calculo import (
     REGRA_DISTRIBUICAO,
+    AjusteCapitulo,
     Meta,
     OrigemPaginas,
     Plano,
     Senioridade,
+    aplicar_ajustes,
     disponibilidade_para_prazo,
     distribuir_paginas,
     paginas_de_conteudo,
@@ -106,11 +108,15 @@ class PedidoRoadmap(BaseModel):
     senioridade: Senioridade
     disponibilidade_horas: float | None = Field(default=None, gt=0, le=168)
     data_limite: date | None = None
+    ajustes: list[AjusteCapitulo] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def um_dos_dois(self) -> "PedidoRoadmap":
         if (self.disponibilidade_horas is None) == (self.data_limite is None):
             raise ValueError("Informe disponibilidade_horas ou data_limite, e só um dos dois.")
+        nums = [a.num for a in self.ajustes]
+        if len(nums) != len(set(nums)):
+            raise ValueError("Capítulo repetido na lista de ajustes.")
         return self
 
 
@@ -244,6 +250,13 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
         # Cache entre usuários: classifica uma vez por livro e por versão (prompt + modelo).
         book.classificacao = {**(await classificar(book.titulo, capitulos)).model_dump(), "versao": versao_classificacao()}
     cls = Classificacao.model_validate(book.classificacao)
+    if pedido.ajustes:
+        nums_livro = {c.num for c in capitulos}
+        for a in pedido.ajustes:
+            if a.num not in nums_livro:
+                raise HTTPException(422, f"Capítulo {a.num} não existe neste livro.")
+        capitulos, cls = aplicar_ajustes(capitulos, cls, pedido.ajustes)
+
     disponibilidade = pedido.disponibilidade_horas
     meta = None
     if disponibilidade is None:
@@ -257,7 +270,7 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
             )
         meta = Meta(data_limite=pedido.data_limite, semanas_ate_o_prazo=semanas_prazo)
     plano = planejar(capitulos, cls, pedido.senioridade, disponibilidade)
-    plano = plano.model_copy(update={"paginas": origem, "avisos": avisos, "meta": meta})
+    plano = plano.model_copy(update={"paginas": origem, "avisos": avisos, "meta": meta, "ajustes": pedido.ajustes})
 
     roadmap = Roadmap(
         book_id=book.id,
@@ -313,6 +326,87 @@ async def apagar_roadmap(roadmap_id: int, session: SessionDep) -> None:
         raise HTTPException(404, "Roadmap não encontrado.")
     await session.delete(roadmap)
     await session.commit()
+
+
+class PedidoAjusteRoadmap(BaseModel):
+    senioridade: Senioridade | None = None
+    disponibilidade_horas: float | None = Field(default=None, gt=0, le=168)
+    data_limite: date | None = None
+    ajustes: list[AjusteCapitulo] | None = None
+
+    @model_validator(mode="after")
+    def valida(self) -> "PedidoAjusteRoadmap":
+        if (
+            self.senioridade is None
+            and self.disponibilidade_horas is None
+            and self.data_limite is None
+            and self.ajustes is None
+        ):
+            raise ValueError(
+                "Informe ao menos um campo para atualizar (senioridade, disponibilidade_horas, data_limite ou ajustes)."
+            )
+        if self.disponibilidade_horas is not None and self.data_limite is not None:
+            raise ValueError("Informe disponibilidade_horas ou data_limite, e não ambos.")
+        if self.ajustes is not None:
+            nums = [a.num for a in self.ajustes]
+            if len(nums) != len(set(nums)):
+                raise ValueError("Capítulo repetido na lista de ajustes.")
+        return self
+
+
+@app.patch("/roadmaps/{roadmap_id}")
+async def ajustar_roadmap(roadmap_id: int, pedido: PedidoAjusteRoadmap, session: SessionDep) -> RoadmapCriado:
+    """Recalcula o roadmap aplicando ajustes de capítulos (nível, peso, páginas) ou de leitor."""
+    roadmap = await session.get(Roadmap, roadmap_id)
+    if not roadmap:
+        raise HTTPException(404, "Roadmap não encontrado.")
+    book = await session.get(Book, roadmap.book_id)
+    if not book:
+        raise HTTPException(404, "Livro não encontrado.")
+
+    plano_antigo = Plano.model_validate(roadmap.plano)
+    capitulos = [Capitulo.model_validate(c) for c in book.capitulos]
+    pesquisa = Pesquisa.model_validate(book.pesquisa) if book.pesquisa else None
+    capitulos, origem, avisos = resolver_paginas(capitulos, book.paginas_conteudo, pesquisa)
+
+    ajustes = pedido.ajustes if pedido.ajustes is not None else plano_antigo.ajustes
+    nums_livro = {c.num for c in capitulos}
+    for a in ajustes:
+        if a.num not in nums_livro:
+            raise HTTPException(422, f"Capítulo {a.num} não existe neste livro.")
+
+    cls = Classificacao.model_validate(book.classificacao)
+    capitulos, cls = aplicar_ajustes(capitulos, cls, ajustes)
+
+    senioridade = pedido.senioridade or plano_antigo.senioridade
+    disponibilidade = pedido.disponibilidade_horas
+    meta = plano_antigo.meta
+
+    if pedido.data_limite:
+        semanas_prazo = semanas_ate(pedido.data_limite, hoje())
+        if semanas_prazo == 0:
+            raise HTTPException(422, "A data_limite precisa ser futura.")
+        total = planejar(capitulos, cls, senioridade, 1.0).total_horas
+        disponibilidade = disponibilidade_para_prazo(total, semanas_prazo) if total else 0.0
+        if disponibilidade > 168:
+            raise HTTPException(
+                422,
+                f"Prazo inviável: exigiria {disponibilidade:g} h/semana ({total:.1f} h em {semanas_prazo} semana(s)); o máximo é 168.",
+            )
+        meta = Meta(data_limite=pedido.data_limite, semanas_ate_o_prazo=semanas_prazo)
+    elif disponibilidade is None:
+        disponibilidade = plano_antigo.disponibilidade_horas
+
+    novo_plano = planejar(capitulos, cls, senioridade, disponibilidade)
+    novo_plano = novo_plano.model_copy(
+        update={"paginas": origem, "avisos": avisos, "meta": meta, "ajustes": ajustes}
+    )
+
+    roadmap.senioridade = senioridade
+    roadmap.disponibilidade_horas = disponibilidade
+    roadmap.plano = novo_plano.model_dump(mode="json")
+    await session.commit()
+    return RoadmapCriado(id=roadmap.id, book_id=roadmap.book_id, **novo_plano.model_dump())
 
 
 @app.get("/roadmaps/{roadmap_id}/explicar")
