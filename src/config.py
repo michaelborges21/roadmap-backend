@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,7 +58,19 @@ class PesquisaWeb(BaseModel):
     padroes_url_ignorados: list[str]
 
 
+class Api(BaseModel):
+    upload_max_mb: float
+    health_timeout_s: float
+
+
+class Retry(BaseModel):
+    tentativas: int = Field(ge=1)
+    espera_s: float = Field(ge=0)
+
+
 class Config(BaseModel):
+    api: Api
+    retry: Retry
     extracao: Extracao
     calculo: Calculo
     llm: LLM

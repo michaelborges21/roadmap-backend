@@ -110,3 +110,18 @@ async def test_capa_sem_titulo_e_invalida(llm: Callable[[dict], list[dict]]):
     llm({"titulo": "", "subtitulo": None, "autor": None, "edicao": None})
     with pytest.raises(RespostaLLMInvalida):
         await ler_capa(b"img")
+
+
+def test_versao_do_cache_muda_com_prompt_e_modelo(monkeypatch: pytest.MonkeyPatch):
+    from src import classificador
+    from src.config import config
+    from src.pesquisa import versao_pesquisa
+
+    base = (classificador.versao_classificacao(), versao_pesquisa())
+    assert base == (classificador.versao_classificacao(), versao_pesquisa())  # estável
+
+    monkeypatch.setattr(classificador, "PROMPT", classificador.PROMPT + " Nova regra.")
+    assert classificador.versao_classificacao() != base[0] and versao_pesquisa() == base[1]  # só a classificação
+
+    monkeypatch.setattr(config.llm, "modelo_classificador", "outro:1b")
+    assert versao_pesquisa() != base[1]  # a pesquisa também usa o modelo

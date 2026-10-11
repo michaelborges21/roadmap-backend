@@ -1,17 +1,18 @@
 """Chamadas ao LLM (spec 2.5–2.6): o modelo só julga, transcreve e redige, nunca calcula."""
 
+import hashlib
 import json
 from typing import Literal
 
-import httpx
-from ollama import AsyncClient, ResponseError
+from ollama import AsyncClient
 from pydantic import BaseModel, Field, ValidationError
 
 from src.config import config, settings
 from src.extracao import Capitulo
+from src.retry import ERROS_DE_REDE, com_retry
 
 Nivel = Literal["iniciante", "intermediario", "avancado"]
-ERROS_OLLAMA = (ResponseError, httpx.HTTPError, ConnectionError)
+ERROS_OLLAMA = ERROS_DE_REDE
 
 
 class CapituloClassificado(BaseModel):
@@ -78,21 +79,32 @@ relativo do capítulo, julgado pelos subtópicos. Se as páginas vieram de pesqu
 são estimadas. Fator 1.0 = sem efeito. Não recalcule nem invente números."""
 
 
+def versao_cache(*partes: str | None) -> str:
+    """Impressão digital do que determina um resultado em cache: prompt e modelo. Mudou → o cache vale menos."""
+    return hashlib.sha256("\x1f".join(p or "" for p in partes).encode()).hexdigest()[:12]
+
+
+def versao_classificacao() -> str:
+    return versao_cache(PROMPT, config.llm.modelo_classificador)
+
+
 async def chat[T: BaseModel](modelo: str | None, papel: str, messages: list[dict[str, object]], schema: type[T]) -> T:
     if not modelo:
         raise LLMIndisponivel(f"Modelo {papel} não configurado (config.yaml: llm).")
     cliente = AsyncClient(host=settings.ollama_host, timeout=config.llm.timeout_s)
     try:
-        resposta = await cliente.chat(
-            model=modelo,
-            messages=messages,
-            format=schema.model_json_schema(),
-            think=False,
-            options={
-                "temperature": config.llm.temperature,
-                "num_ctx": config.llm.num_ctx,
-                "num_predict": config.llm.num_predict,
-            },
+        resposta = await com_retry(
+            lambda: cliente.chat(
+                model=modelo,
+                messages=messages,
+                format=schema.model_json_schema(),
+                think=False,
+                options={
+                    "temperature": config.llm.temperature,
+                    "num_ctx": config.llm.num_ctx,
+                    "num_predict": config.llm.num_predict,
+                },
+            )
         )
     except ERROS_OLLAMA as exc:
         raise LLMIndisponivel(f"Falha ao chamar o Ollama: {exc}") from exc

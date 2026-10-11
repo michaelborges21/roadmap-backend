@@ -284,3 +284,120 @@ async def test_upload_pdf_cache_e_erros(banco: None):
             assert ambiguo.status_code == 422 and "sem título legível" in ambiguo.json()["detail"]
     finally:
         await apagar_por_hash([hashlib.sha256(pdf).hexdigest()])
+
+
+@pytest.mark.asyncio
+async def test_listar_obter_e_apagar_roadmap(monkeypatch: pytest.MonkeyPatch, banco: None):
+    async def pesquisar_fake(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "classificar", classificar_fake)
+    monkeypatch.setattr(main, "pesquisar", pesquisar_fake)
+    book = novo_book("Livro", CAPS, paginas_conteudo=60)
+    await criar(book)
+
+    try:
+        async with cliente() as http:
+            junior = (await http.post(f"/books/{book.id}/roadmaps", json={**PEDIDO, "senioridade": "Junior"})).json()
+            senior = (await http.post(f"/books/{book.id}/roadmaps", json={**PEDIDO, "senioridade": "Senior"})).json()
+
+            lista = await http.get(f"/books/{book.id}/roadmaps")
+            assert lista.status_code == 200
+            assert [r["id"] for r in lista.json()] == [senior["id"], junior["id"]]  # mais recente primeiro
+            assert lista.json()[1]["total_horas"] == junior["total_horas"] and lista.json()[1]["senioridade"] == "Junior"
+
+            lido = await http.get(f"/roadmaps/{junior['id']}")
+            assert (lido.status_code, lido.json()) == (200, junior)  # o mesmo plano que o POST devolveu
+
+            assert (await http.delete(f"/roadmaps/{junior['id']}")).status_code == 204
+            assert (await http.get(f"/roadmaps/{junior['id']}")).status_code == 404
+            assert (await http.delete(f"/roadmaps/{junior['id']}")).status_code == 404
+            assert [r["id"] for r in (await http.get(f"/books/{book.id}/roadmaps")).json()] == [senior["id"]]
+            assert (await http.get("/books/999999999/roadmaps")).status_code == 404
+    finally:
+        await apagar([book.id])
+
+
+@pytest.mark.asyncio
+async def test_cache_e_refeito_so_quando_prompt_ou_modelo_mudam(monkeypatch: pytest.MonkeyPatch, banco: None):
+    classificacoes = pesquisas = 0
+
+    async def classificar_contando(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
+        nonlocal classificacoes
+        classificacoes += 1
+        return CLS
+
+    async def pesquisar_contando(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        nonlocal pesquisas
+        pesquisas += 1
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "classificar", classificar_contando)
+    monkeypatch.setattr(main, "pesquisar", pesquisar_contando)
+    novo = novo_book("Livro novo", CAPS, paginas_conteudo=60)
+    # Cache gravado antes do versionamento (sem chave "versao"): vale como desatualizado.
+    legado = novo_book("Livro legado", CAPS, paginas_conteudo=60, classificacao=CLS.model_dump(), pesquisa=Pesquisa(justificativa="velha").model_dump())
+    await criar(novo, legado)
+
+    async def roadmap(http: AsyncClient, book: Book) -> None:
+        assert (await http.post(f"/books/{book.id}/roadmaps", json=PEDIDO)).status_code == 201
+
+    try:
+        async with cliente() as http:
+            await roadmap(http, novo)
+            await roadmap(http, novo)
+            assert (classificacoes, pesquisas) == (1, 1)  # mesma versão: reaproveita
+
+            await roadmap(http, legado)
+            assert (classificacoes, pesquisas) == (2, 2)  # sem versão: refeito uma vez
+            await roadmap(http, legado)
+            assert (classificacoes, pesquisas) == (2, 2)
+
+            monkeypatch.setattr(main.config.llm, "modelo_classificador", "outro-modelo:1b")
+            await roadmap(http, novo)
+            assert (classificacoes, pesquisas) == (3, 3)  # modelo mudou: os dois caches são refeitos
+            await roadmap(http, novo)
+            assert (classificacoes, pesquisas) == (3, 3)
+    finally:
+        await apagar([novo.id, legado.id])
+
+
+@pytest.mark.asyncio
+async def test_roadmaps_simultaneos_do_mesmo_livro_classificam_e_pesquisam_uma_vez(monkeypatch: pytest.MonkeyPatch, banco: None):
+    import asyncio
+
+    classificacoes = pesquisas = 0
+
+    async def classificar_lento(titulo: str, capitulos: list[Capitulo]) -> Classificacao:
+        nonlocal classificacoes
+        classificacoes += 1
+        await asyncio.sleep(0.3)  # tempo para o outro pedido chegar enquanto este ainda trabalha
+        return CLS
+
+    async def pesquisar_lento(session: object, book: Book, capitulos: list[Capitulo]) -> Pesquisa:
+        nonlocal pesquisas
+        pesquisas += 1
+        await asyncio.sleep(0.3)
+        return Pesquisa(justificativa="sem fonte")
+
+    monkeypatch.setattr(main, "classificar", classificar_lento)
+    monkeypatch.setattr(main, "pesquisar", pesquisar_lento)
+    mesmo, mesmo_2, outro = (novo_book(t, CAPS, paginas_conteudo=60) for t in ("Mesmo livro", "Livro paralelo A", "Livro paralelo B"))
+    await criar(mesmo, mesmo_2, outro)
+
+    try:
+        async with cliente() as http:
+            pedidos = [http.post(f"/books/{mesmo.id}/roadmaps", json={**PEDIDO, "senioridade": s}) for s in ("Junior", "Pleno", "Senior")]
+            respostas = await asyncio.gather(*pedidos)
+            assert [r.status_code for r in respostas] == [201, 201, 201]
+            assert (classificacoes, pesquisas) == (1, 1)  # os outros dois esperaram e reaproveitaram
+
+            # Livros diferentes não se bloqueiam: cada um leva ~0,6s (classificar + pesquisar); em série seria >= 1,2s.
+            classificacoes = pesquisas = 0
+            inicio = asyncio.get_running_loop().time()
+            respostas = await asyncio.gather(*(http.post(f"/books/{b.id}/roadmaps", json=PEDIDO) for b in (mesmo_2, outro)))
+            assert [r.status_code for r in respostas] == [201, 201]
+            assert (classificacoes, pesquisas) == (2, 2)
+            assert asyncio.get_running_loop().time() - inicio < 1.15
+    finally:
+        await apagar([mesmo.id, mesmo_2.id, outro.id])

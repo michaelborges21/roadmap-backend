@@ -16,10 +16,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.classificador import ERROS_OLLAMA, LLMIndisponivel, RespostaLLMInvalida, chat
+from src.classificador import ERROS_OLLAMA, LLMIndisponivel, RespostaLLMInvalida, chat, versao_cache
 from src.config import config, settings
 from src.extracao import Capitulo
 from src.models import Book, Chunk
+from src.retry import com_retry
 
 cfg = config.pesquisa
 DIMENSOES = 768  # Chunk.embedding = Vector(768)
@@ -81,6 +82,12 @@ sobre outros livros ficam de fora.
 Prefira a página da editora e de livrarias. Não calcule nem estime: só transcreva."""
 
 
+def versao_pesquisa() -> str:
+    return versao_cache(
+        PROMPT_PESQUISA, config.llm.modelo_classificador, config.llm.modelo_embedding, cfg.prefixo_documento, cfg.prefixo_consulta
+    )
+
+
 def fonte_ignorada(url: str) -> bool:
     """Rede social mistura vários livros num post; página de e-book conta páginas de tela, não do
     livro impresso. Nenhuma das duas é fonte de número de páginas."""
@@ -140,10 +147,12 @@ async def buscar_web(titulo: str) -> list[dict[str, str]]:
     consulta = f"{re.sub(r'[^\w\s]', ' ', titulo)} livro número de páginas"
     try:
         async with httpx.AsyncClient(timeout=cfg.timeout_s) as http:
-            resposta = await http.get(
-                f"{settings.searxng_url}/search", params={"q": consulta, "format": "json", "language": "pt-BR"}
-            )
-            resposta.raise_for_status()
+
+            async def buscar() -> httpx.Response:
+                r = await http.get(f"{settings.searxng_url}/search", params={"q": consulta, "format": "json", "language": "pt-BR"})
+                return r.raise_for_status()
+
+            resposta = await com_retry(buscar)
     except httpx.HTTPError as exc:
         raise PesquisaIndisponivel(f"SearXNG inacessível em {settings.searxng_url}: {exc}") from exc
     resultados = resposta.json().get("results", [])[: cfg.resultados_web]
@@ -161,11 +170,12 @@ async def baixar_trechos(http: httpx.AsyncClient, url: str) -> list[TrechoWeb]:
 
 
 async def embeddar(textos: list[str], prefixo: str) -> list[list[float]]:
-    if not config.llm.modelo_embedding:
+    modelo = config.llm.modelo_embedding
+    if not modelo:
         raise LLMIndisponivel("Modelo de embedding não configurado (config.yaml: llm.modelo_embedding).")
     cliente = AsyncClient(host=settings.ollama_host, timeout=config.llm.timeout_s)
     try:
-        resposta = await cliente.embed(model=config.llm.modelo_embedding, input=[prefixo + t for t in textos])
+        resposta = await com_retry(lambda: cliente.embed(model=modelo, input=[prefixo + t for t in textos]))
     except ERROS_OLLAMA as exc:
         raise LLMIndisponivel(f"Falha ao gerar embeddings no Ollama: {exc}") from exc
     vetores = [list(v) for v in resposta.embeddings]

@@ -1,3 +1,15 @@
+api:
+  # Upload acima disso → 413, sem ler o arquivo inteiro para a memória.
+  upload_max_mb: 50
+  # Tempo máximo de cada dependência no GET /health.
+  health_timeout_s: 3
+
+# Ollama e SearXNG: só falha transitória (conexão recusada, 5xx) é repetida; ver src/retry.py.
+retry:
+  tentativas: 3
+  # Espera entre tentativas: espera_s × 2^n (0,5s, 1s).
+  espera_s: 0.5
+
 extracao:
   # Caractere com corpo acima disso é marca d'água ("Amostra" em Helvetica 80–117pt).
   watermark_min_size: 40

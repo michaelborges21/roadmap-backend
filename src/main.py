@@ -1,12 +1,17 @@
+import asyncio
 import hashlib
+from collections.abc import Awaitable
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.calculo import (
@@ -26,11 +31,13 @@ from src.classificador import (
     classificar,
     explicar,
     ler_capa,
+    versao_classificacao,
 )
+from src.config import config, settings
 from src.db import get_session
-from src.extracao import Capitulo, Extraido, ExtracaoAmbigua, extrair, extrair_texto
+from src.extracao import Capitulo, ExtracaoAmbigua, Extraido, extrair, extrair_texto
 from src.models import Book, Roadmap
-from src.pesquisa import Pesquisa, PesquisaIndisponivel, pesquisar
+from src.pesquisa import Pesquisa, PesquisaIndisponivel, pesquisar, versao_pesquisa
 
 app = FastAPI(title="RoadmapAPI")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -40,6 +47,7 @@ IMAGENS = {"image/jpeg", "image/png"}
 MARKDOWN = {"text/markdown", "text/x-markdown"}
 TEXTOS = {"text/plain", *MARKDOWN}
 STATIC_DIR = Path(__file__).parent.parent / "static"
+LOCK_LIVRO = 1  # espaço de nomes do pg_advisory_xact_lock(ns, book_id): outros locks futuros não colidem
 STATUS_DE_ERRO: dict[type[Exception], int] = {
     ExtracaoAmbigua: 422,
     RespostaLLMInvalida: 502,
@@ -49,7 +57,9 @@ STATUS_DE_ERRO: dict[type[Exception], int] = {
 
 
 async def erro_de_dominio(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(status_code=STATUS_DE_ERRO[type(exc)], content={"detail": str(exc)})
+    # isinstance (e não type(exc)): subclasse de um erro de domínio herda o status do pai.
+    status = next(s for tipo, s in STATUS_DE_ERRO.items() if isinstance(exc, tipo))
+    return JSONResponse(status_code=status, content={"detail": str(exc)})
 
 
 for erro in STATUS_DE_ERRO:
@@ -60,6 +70,28 @@ for erro in STATUS_DE_ERRO:
 async def interface_de_teste() -> FileResponse:
     """Página auxiliar para exercitar a API sem o Swagger. Não é parte do contrato."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+async def _checar(nome: str, coro: Awaitable[object]) -> tuple[str, str]:
+    try:
+        await asyncio.wait_for(coro, config.api.health_timeout_s)
+    except Exception as exc:  # health check: qualquer falha da dependência vira "fora", nunca 500
+        return nome, f"fora: {type(exc).__name__}"
+    return nome, "ok"
+
+
+@app.get("/health")
+async def health(session: SessionDep) -> JSONResponse:
+    """200 se Postgres, Ollama e SearXNG respondem; 503 com o estado de cada um caso contrário."""
+    async with httpx.AsyncClient() as http:
+        resultados = await asyncio.gather(
+            _checar("postgres", session.execute(text("select 1"))),
+            _checar("ollama", http.get(f"{settings.ollama_host}/api/tags")),
+            _checar("searxng", http.get(settings.searxng_url)),
+        )
+    dependencias = dict(resultados)
+    ok = all(v == "ok" for v in dependencias.values())
+    return JSONResponse(status_code=200 if ok else 503, content={"status": "ok" if ok else "degradado", **dependencias})
 
 
 class BookCriado(Extraido):
@@ -87,7 +119,12 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
     if not (e_texto or e_pdf or e_imagem):
         raise HTTPException(415, "Envie um PDF, uma imagem de capa (JPEG/PNG) ou um arquivo de texto (.txt/.md).")
 
-    dados = await arquivo.read()
+    limite = int(config.api.upload_max_mb * 1024 * 1024)
+    if (arquivo.size or 0) > limite:
+        raise HTTPException(413, f"Arquivo acima do limite de {config.api.upload_max_mb:g} MB.")
+    dados = await arquivo.read(limite + 1)
+    if len(dados) > limite:
+        raise HTTPException(413, f"Arquivo acima do limite de {config.api.upload_max_mb:g} MB.")
     hash_fonte = hashlib.sha256(dados).hexdigest()
     book = await session.scalar(select(Book).where(Book.hash_fonte == hash_fonte))
     if book:
@@ -104,40 +141,28 @@ async def criar_book(arquivo: UploadFile, response: Response, session: SessionDe
             ext = await run_in_threadpool(extrair, dados)
         book = Book(hash_fonte=hash_fonte, **ext.model_dump(mode="json"))
         session.add(book)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # Upload simultâneo do mesmo arquivo: o outro pedido gravou primeiro; reaproveita o livro dele.
+            await session.rollback()
+            book = await session.scalar(select(Book).where(Book.hash_fonte == hash_fonte))
+            response.status_code = 200
 
     extraido = Extraido.model_validate(book, from_attributes=True).model_dump()
     return BookCriado(**extraido, id=book.id, falta_sumario=not book.capitulos)
 
 
-@app.post("/books/{book_id}/roadmaps", status_code=201)
-async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep) -> RoadmapCriado:
-    book = await session.get(Book, book_id)
-    if not book:
-        raise HTTPException(404, "Livro não encontrado.")
-    if not book.capitulos:
-        raise HTTPException(422, "Livro sem sumário: envie o PDF do sumário para gerar o cronograma.")
+def resolver_paginas(
+    capitulos: list[Capitulo], paginas_sumario: int | None, pesquisa: Pesquisa | None
+) -> tuple[list[Capitulo], OrigemPaginas, list[str]]:
+    """De onde vêm as páginas do cálculo, os capítulos com páginas preenchidas e os avisos que isso gera.
 
-    capitulos = [Capitulo.model_validate(c) for c in book.capitulos]
-    sem_paginas = any(c.paginas is None for c in capitulos)
+    Pré-condição: sumário sem páginas exige `pesquisa.paginas_totais` (o chamador responde 422 antes).
+    """
     avisos: list[str] = []
-
-    if book.pesquisa is None:  # uma vez por livro, como a classificação
-        try:
-            book.pesquisa = (await pesquisar(session, book, capitulos)).model_dump(mode="json")
-        except PesquisaIndisponivel as exc:
-            if sem_paginas:
-                raise  # sem página no sumário e sem pesquisa, não há número honesto para calcular
-            avisos.append(f"Pesquisa na web indisponível; páginas do sumário usadas sem conferência ({exc}).")
-    pesquisa = Pesquisa.model_validate(book.pesquisa) if book.pesquisa else None
-
-    if sem_paginas:
-        if pesquisa is None or pesquisa.paginas_totais is None:
-            await session.commit()  # guarda a pesquisa e a base RAG: a próxima tentativa não refaz a busca à toa
-            motivo = pesquisa.justificativa if pesquisa else ""
-            raise HTTPException(
-                422, f"Sumário sem números de página e nenhuma fonte confiável com o total de páginas. {motivo} Envie um sumário paginado."
-            )
+    if any(c.paginas is None for c in capitulos):
+        assert pesquisa and pesquisa.paginas_totais
         conteudo = paginas_de_conteudo(pesquisa.paginas_totais)
         capitulos = distribuir_paginas(capitulos, conteudo)
         origem = OrigemPaginas(
@@ -148,19 +173,59 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
             regra=REGRA_DISTRIBUICAO,
         )
     else:
-        origem = OrigemPaginas(origem="sumario", paginas_totais=book.paginas_conteudo)
-        if pesquisa and pesquisa.paginas_totais and book.paginas_conteudo and book.paginas_conteudo > pesquisa.paginas_totais:
+        origem = OrigemPaginas(origem="sumario", paginas_totais=paginas_sumario)
+        if pesquisa and pesquisa.paginas_totais and paginas_sumario and paginas_sumario > pesquisa.paginas_totais:
             avisos.append(
-                f"O sumário soma {book.paginas_conteudo} páginas de conteúdo, mas a fonte pesquisada diz "
+                f"O sumário soma {paginas_sumario} páginas de conteúdo, mas a fonte pesquisada diz "
                 f"{pesquisa.paginas_totais} ({pesquisa.url_fonte}): edição diferente?"
             )
     if pesquisa and pesquisa.outras_contagens:
         avisos.append(
             "Outras contagens de páginas vistas na web (podem ser de outro livro ou edição): " + ", ".join(pesquisa.outras_contagens)
         )
+    return capitulos, origem, avisos
 
-    if book.classificacao is None:  # cache entre usuários: classifica uma vez por livro
-        book.classificacao = (await classificar(book.titulo, capitulos)).model_dump()
+
+@app.post("/books/{book_id}/roadmaps", status_code=201)
+async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep) -> RoadmapCriado:
+    # Um roadmap por vez para o mesmo livro: o segundo pedido espera o primeiro gravar pesquisa e classificação
+    # e as reaproveita, em vez de repetir a chamada ao LLM. Preso à transação: o commit (ou o rollback, ou a
+    # queda da conexão) libera. Vem antes do get e com populate_existing, para ler o que o outro pedido gravou.
+    await session.execute(text("select pg_advisory_xact_lock(:ns, :id)"), {"ns": LOCK_LIVRO, "id": book_id})
+    book = await session.get(Book, book_id, populate_existing=True)
+    if not book:
+        raise HTTPException(404, "Livro não encontrado.")
+    if not book.capitulos:
+        raise HTTPException(422, "Livro sem sumário: envie o PDF do sumário para gerar o cronograma.")
+
+    capitulos = [Capitulo.model_validate(c) for c in book.capitulos]
+    sem_paginas = any(c.paginas is None for c in capitulos)
+    avisos: list[str] = []
+
+    # Uma vez por livro e por versão (prompt + modelos): mudou o prompt ou o modelo, o cache antigo é refeito.
+    # Os trechos da web ficam na base RAG, então refazer não volta à web.
+    if book.pesquisa is None or book.pesquisa.get("versao") != versao_pesquisa():
+        try:
+            achado = await pesquisar(session, book, capitulos)
+            book.pesquisa = {**achado.model_dump(mode="json"), "versao": versao_pesquisa()}
+        except PesquisaIndisponivel as exc:
+            if sem_paginas and book.pesquisa is None:
+                raise  # sem página no sumário e sem pesquisa, não há número honesto para calcular
+            avisos.append(f"Pesquisa na web indisponível; páginas do sumário usadas sem conferência ({exc}).")
+    pesquisa = Pesquisa.model_validate(book.pesquisa) if book.pesquisa else None
+
+    if sem_paginas and (pesquisa is None or pesquisa.paginas_totais is None):
+        await session.commit()  # guarda a pesquisa e a base RAG: a próxima tentativa não refaz a busca à toa
+        motivo = pesquisa.justificativa if pesquisa else ""
+        raise HTTPException(
+            422, f"Sumário sem números de página e nenhuma fonte confiável com o total de páginas. {motivo} Envie um sumário paginado."
+        )
+    capitulos, origem, avisos_paginas = resolver_paginas(capitulos, book.paginas_conteudo, pesquisa)
+    avisos += avisos_paginas
+
+    if book.classificacao is None or book.classificacao.get("versao") != versao_classificacao():
+        # Cache entre usuários: classifica uma vez por livro e por versão (prompt + modelo).
+        book.classificacao = {**(await classificar(book.titulo, capitulos)).model_dump(), "versao": versao_classificacao()}
     plano = planejar(capitulos, Classificacao.model_validate(book.classificacao), pedido.senioridade, pedido.disponibilidade_horas)
     plano = plano.model_copy(update={"paginas": origem, "avisos": avisos})
 
@@ -173,6 +238,51 @@ async def criar_roadmap(book_id: int, pedido: PedidoRoadmap, session: SessionDep
     session.add(roadmap)
     await session.commit()
     return RoadmapCriado(id=roadmap.id, book_id=book.id, **plano.model_dump())
+
+
+class RoadmapResumo(BaseModel):
+    id: int
+    senioridade: Senioridade
+    disponibilidade_horas: float
+    total_horas: float
+    semanas: int
+    criado_em: datetime
+
+
+@app.get("/books/{book_id}/roadmaps")
+async def listar_roadmaps(book_id: int, session: SessionDep) -> list[RoadmapResumo]:
+    """Roadmaps do livro, do mais recente ao mais antigo. Só lê o que já foi persistido."""
+    if not await session.get(Book, book_id):
+        raise HTTPException(404, "Livro não encontrado.")
+    roadmaps = await session.scalars(select(Roadmap).where(Roadmap.book_id == book_id).order_by(Roadmap.id.desc()))
+    return [
+        RoadmapResumo(
+            id=r.id,
+            senioridade=r.senioridade,  # type: ignore[arg-type]
+            disponibilidade_horas=r.disponibilidade_horas,
+            total_horas=r.plano["total_horas"],
+            semanas=r.plano["semanas"],
+            criado_em=r.criado_em,
+        )
+        for r in roadmaps
+    ]
+
+
+@app.get("/roadmaps/{roadmap_id}")
+async def obter_roadmap(roadmap_id: int, session: SessionDep) -> RoadmapCriado:
+    roadmap = await session.get(Roadmap, roadmap_id)
+    if not roadmap:
+        raise HTTPException(404, "Roadmap não encontrado.")
+    return RoadmapCriado(id=roadmap.id, book_id=roadmap.book_id, **Plano.model_validate(roadmap.plano).model_dump())
+
+
+@app.delete("/roadmaps/{roadmap_id}", status_code=204)
+async def apagar_roadmap(roadmap_id: int, session: SessionDep) -> None:
+    roadmap = await session.get(Roadmap, roadmap_id)
+    if not roadmap:
+        raise HTTPException(404, "Roadmap não encontrado.")
+    await session.delete(roadmap)
+    await session.commit()
 
 
 @app.get("/roadmaps/{roadmap_id}/explicar")
